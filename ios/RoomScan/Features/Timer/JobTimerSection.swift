@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Start/stop a work timer on a job; shows total time and history.
 struct JobTimerSection: View {

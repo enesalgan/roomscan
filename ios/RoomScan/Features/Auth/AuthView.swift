@@ -96,6 +96,16 @@ struct AuthView: View {
                             .font(.footnote).disabled(email.isEmpty)
                     }
                 }
+
+                Section {
+                    Button {
+                        session.enterDemo()
+                    } label: {
+                        HStack { Spacer(); Label("Try the demo — no account needed", systemImage: "play.circle"); Spacer() }
+                    }
+                } footer: {
+                    Text("Everything stays on this device. \(Config.freeScans) free scans, then the upgrade screen.")
+                }
             }
             .navigationTitle("")
             .toolbar(.hidden, for: .navigationBar)

@@ -57,7 +57,11 @@ struct JobDetailView: View {
                     }
                 }
                 .sheet(isPresented: $showPaywall) { PaywallView() }
-                .sheet(item: $scanToPreview) { ScanPreviewView(scan: $0) }
+                .sheet(item: $scanToPreview) { s in
+                    ScanPreviewView(scan: s) { updated in
+                        if let i = scans.firstIndex(where: { $0.id == updated.id }) { scans[i] = updated }
+                    }
+                }
                 .confirmationDialog("Delete this job?", isPresented: $confirmDelete, titleVisibility: .visible) {
                     Button("Delete", role: .destructive) { Task { await deleteJob() } }
                 }

@@ -80,6 +80,12 @@ final class StoreService {
     }
 
     private func verifyOnServer(jws: String) async -> Bool {
+        if DemoStore.isActive {
+            // Local StoreKit test purchase in demo mode: grant locally, nothing goes to a server.
+            DemoStore.shared.subscribed = true
+            DemoStore.shared.save()
+            return true
+        }
         struct Body: Encodable { let signedTransaction: String }
         struct Reply: Decodable { let ok: Bool? ; let error: String? }
         do {

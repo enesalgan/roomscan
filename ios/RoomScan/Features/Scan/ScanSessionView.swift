@@ -82,7 +82,9 @@ struct ScanSessionView: View {
         NavigationStack {
             Form {
                 if let room = controller.finalRoom {
-                    let (summary, area) = RoomSummaryBuilder.build(from: room)
+                    let built = RoomSummaryBuilder.build(from: room)
+                    let summary = built.summary
+                    let area = built.floorAreaM2
                     Section("Room") {
                         TextField("Name", text: $roomName)
                     }
@@ -118,10 +120,14 @@ struct ScanSessionView: View {
         guard let room = controller.finalRoom, let userId = session.userId else { return }
         saving = true; defer { saving = false }
         do {
-            let (summary, area) = RoomSummaryBuilder.build(from: room)
+            let built = RoomSummaryBuilder.build(from: room)
+            let plan = FloorPlanBuilder.build(from: room)
             let files = try RoomSummaryBuilder.export(room, name: roomName)
             let scan = Scan(jobId: job.id, orgId: job.orgId, createdBy: userId,
-                            name: roomName.nilIfEmpty ?? "Room", floorAreaM2: area, summary: summary)
+                            name: roomName.nilIfEmpty ?? "Room",
+                            floorAreaM2: plan?.area ?? built.floorAreaM2,
+                            summary: plan?.summary ?? built.summary,
+                            plan: plan)
             let saved = try await Repository.saveScan(scan, usdzURL: files.usdz, jsonData: files.json, thumbnail: controller.snapshot())
             try? FileManager.default.removeItem(at: files.usdz)
             onSaved(saved)

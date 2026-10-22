@@ -13,6 +13,14 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                if session.isDemo {
+                    Section {
+                        Label("Demo mode — data is only on this device", systemImage: "testtube.2").foregroundStyle(.orange)
+                        Button("Reset demo data", role: .destructive) {
+                            DemoStore.shared.reset(); Task { await session.refreshEntitlement() }
+                        }
+                    }
+                }
                 Section("Account") {
                     LabeledContent("Name", value: session.profile?.displayName ?? "—")
                     LabeledContent("Email", value: session.profile?.email ?? "—")
@@ -73,7 +81,7 @@ struct SettingsView: View {
                 if let error { Text(error).foregroundStyle(.red).font(.footnote) }
 
                 Section {
-                    Button("Sign out", role: .destructive) { Task { await session.signOut() } }
+                    Button(session.isDemo ? "Exit demo" : "Sign out", role: .destructive) { Task { await session.signOut() } }
                 }
 
                 Section {

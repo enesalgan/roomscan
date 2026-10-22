@@ -159,11 +159,12 @@ struct Scan: Codable, Identifiable, Hashable {
     var roomCount: Int = 1
     var floorAreaM2: Double?
     var summary: ScanSummary = ScanSummary()
+    var plan: FloorPlan?
     var capturedAt: Date = Date()
     var createdAt: Date = Date()
 
     enum CodingKeys: String, CodingKey {
-        case id, name, summary
+        case id, name, summary, plan
         case jobId = "job_id"
         case orgId = "org_id"
         case createdBy = "created_by"

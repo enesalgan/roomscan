@@ -14,6 +14,7 @@ final class SessionStore {
     var organization: Organization?
     var entitlement = Entitlement()
     var lastError: String?
+    var isDemo = false
 
     private var listenerTask: Task<Void, Never>?
 
@@ -23,6 +24,7 @@ final class SessionStore {
             for await (event, session) in supabase.auth.authStateChanges {
                 switch event {
                 case .initialSession, .signedIn, .tokenRefreshed, .userUpdated:
+                    if isDemo { break }
                     if let session {
                         userId = session.user.id
                         await loadContext()
@@ -31,6 +33,7 @@ final class SessionStore {
                         state = .signedOut
                     }
                 case .signedOut, .userDeleted:
+                    if isDemo { break }   // demo session is local; ignore Supabase auth events
                     userId = nil; profile = nil; organization = nil; entitlement = Entitlement()
                     state = .signedOut
                 default:
@@ -60,6 +63,7 @@ final class SessionStore {
     }
 
     func refreshEntitlement() async {
+        if isDemo { entitlement = DemoStore.shared.entitlement; return }
         do {
             entitlement = try await supabase.rpc("my_entitlement").execute().value
         } catch {
@@ -87,7 +91,27 @@ final class SessionStore {
     }
 
     func signOut() async {
+        if isDemo { exitDemo(); return }
         try? await supabase.auth.signOut()
+    }
+
+    // MARK: Demo mode (no backend)
+
+    func enterDemo() {
+        DemoStore.shared.enter()
+        isDemo = true
+        userId = DemoStore.shared.userId
+        profile = DemoStore.shared.profile
+        organization = DemoStore.shared.organization
+        entitlement = DemoStore.shared.entitlement
+        state = .signedIn
+    }
+
+    func exitDemo() {
+        DemoStore.shared.exit()
+        isDemo = false
+        userId = nil; profile = nil; organization = nil; entitlement = Entitlement()
+        state = .signedOut
     }
 
     func resetPassword(email: String) async throws {

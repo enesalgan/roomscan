@@ -17,41 +17,47 @@ struct RoomCaptureViewRepresentable: UIViewRepresentable {
 
     func updateUIView(_ uiView: RoomCaptureView, context: Context) {}
 
-    func makeCoordinator() -> Coordinator { Coordinator(controller: controller) }
+    func makeCoordinator() -> RoomCaptureCoordinator { RoomCaptureCoordinator(controller: controller) }
+}
 
-    // RoomCaptureViewDelegate inherits NSCoding, hence the encode/init(coder:) boilerplate.
-    final class Coordinator: NSObject, RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
-        let controller: ScanController
-        init(controller: ScanController) { self.controller = controller }
+/// Top-level (not nested) because RoomCaptureViewDelegate inherits NSCoding and
+/// Xcode 16 rejects nested NSCoding classes ("unstable name").
+@objc(RoomCaptureCoordinator)
+final class RoomCaptureCoordinator: NSObject, RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
+    let controller: ScanController
+    init(controller: ScanController) {
+        self.controller = controller
+        super.init()
+    }
 
-        func encode(with coder: NSCoder) {}
-        required init?(coder: NSCoder) { return nil }
+    // NSCoding boilerplate (never actually archived)
+    func encode(with coder: NSCoder) {}
+    required init?(coder: NSCoder) { return nil }
 
-        // Ask RoomPlan to post-process and show the final model when the session ends.
-        func captureView(shouldPresent roomDataForProcessing: CapturedRoomData, error: Error?) -> Bool {
-            if let error { Task { @MainActor in controller.error = error.localizedDescription } }
-            return true
+    // Ask RoomPlan to post-process and show the final model when the session ends.
+    func captureView(shouldPresent roomDataForProcessing: CapturedRoomData, error: Error?) -> Bool {
+        if let error { Task { @MainActor in controller.error = error.localizedDescription } }
+        return true
+    }
+
+    func captureView(didPresent processedResult: CapturedRoom, error: Error?) {
+        Task { @MainActor in
+            if let error { controller.error = error.localizedDescription }
+            controller.finished(room: processedResult)
         }
+    }
 
-        func captureView(didPresent processedResult: CapturedRoom, error: Error?) {
-            Task { @MainActor in
-                if let error { controller.error = error.localizedDescription }
-                controller.finished(room: processedResult)
-            }
-        }
+    // Live session feedback
+    func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
+        Task { @MainActor in controller.liveRoom = room }
+    }
 
-        // Live session feedback
-        func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
-            Task { @MainActor in controller.liveRoom = room }
-        }
+    func captureSession(_ session: RoomCaptureSession, didProvide instruction: RoomCaptureSession.Instruction) {
+        Task { @MainActor in controller.instruction = instruction }
+    }
 
-        func captureSession(_ session: RoomCaptureSession, didProvide instruction: RoomCaptureSession.Instruction) {
-            Task { @MainActor in controller.instruction = instruction }
-        }
-
-        func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
-            if let error { Task { @MainActor in controller.error = error.localizedDescription } }
-        }
+    func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
+        if let error { Task { @MainActor in controller.error = error.localizedDescription } }
     }
 }
 
@@ -104,8 +110,8 @@ final class ScanController {
         case .moveAwayFromWall: "Move away from the wall"
         case .slowDown: "Slow down"
         case .turnOnLight: "Turn on more light"
-        case .normal, .none: nil
         case .lowTexture: "Point at textured surfaces"
+        case .normal, .none: nil
         @unknown default: nil
         }
     }
