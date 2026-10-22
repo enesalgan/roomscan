@@ -15,7 +15,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "5.10"
-    DEVELOPMENT_TEAM: ""          # ← Apple Developer Team ID (Xcode > Signing)
+    DEVELOPMENT_TEAM: "PZ8N44Y7VY"          # ← Apple Developer Team ID (Xcode > Signing)
     CODE_SIGN_STYLE: Automatic
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -61,3 +61,6 @@ targets:
     scheme:
       testTargets: []
       storeKitConfiguration: RoomScan/Resources/Products.storekit
+      run:
+        enableGPUValidationMode: disabled
+        enableGPUFrameCaptureMode: disabled

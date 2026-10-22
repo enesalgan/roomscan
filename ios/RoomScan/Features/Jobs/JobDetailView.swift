@@ -6,8 +6,10 @@ struct JobDetailView: View {
     @Environment(SessionStore.self) private var session
     @Environment(\.dismiss) private var dismiss
     let jobId: UUID
+    var autoStartScan = false
 
     @State private var job: Job?
+    @State private var didAutoStart = false
     @State private var scans: [Scan] = []
     @State private var photos: [Photo] = []
     @State private var error: String?
@@ -51,13 +53,16 @@ struct JobDetailView: View {
                     JobEditView(job: job) { self.job = $0 }
                 }
                 .fullScreenCover(isPresented: $showScanner) {
-                    ScanSessionView(job: job) { saved in
+                    ScanSessionView(job: job, existingScans: scans.count, onSaved: { saved in
                         scans.insert(saved, at: 0)
+                        if job.status == .new || job.status == .scheduled { self.job?.status = .measured }
                         Task { await session.refreshEntitlement() }
-                    }
+                        // open the 2D plan right away
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { scanToPreview = saved }
+                    }, onPhoto: { p in photos.append(p) })
                 }
                 .sheet(isPresented: $showPaywall) { PaywallView() }
-                .sheet(item: $scanToPreview) { s in
+                .fullScreenCover(item: $scanToPreview) { s in
                     ScanPreviewView(scan: s) { updated in
                         if let i = scans.firstIndex(where: { $0.id == updated.id }) { scans[i] = updated }
                     }
@@ -168,6 +173,11 @@ struct JobDetailView: View {
             async let s = Repository.scans(jobId: jobId)
             async let p = Repository.photos(jobId: jobId)
             job = try await j; scans = try await s; photos = try await p
+            if autoStartScan && !didAutoStart {
+                didAutoStart = true
+                try? await Task.sleep(for: .milliseconds(300))
+                startScan()
+            }
         } catch { self.error = error.localizedDescription }
     }
 

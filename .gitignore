@@ -14,3 +14,6 @@ ios/Config/Secrets.xcconfig
 supabase/.temp/
 supabase/.branches/
 .env
+
+# XcodeGen output
+ios/RoomScan/Resources/Info.plist

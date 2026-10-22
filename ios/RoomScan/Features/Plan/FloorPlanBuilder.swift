@@ -35,7 +35,7 @@ enum FloorPlanBuilder {
                 width: Double(o.dimensions.x), depth: Double(o.dimensions.z), height: Double(o.dimensions.y),
                 rotation: atan2(Double(ax.z), Double(ax.x))))
         }
-        return plan
+        return plan.straightened()
     }
 
     // MARK: - Geometry helpers

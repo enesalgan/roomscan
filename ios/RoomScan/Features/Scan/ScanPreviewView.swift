@@ -26,6 +26,7 @@ struct ScanPreviewView: View {
     @State private var previewItem: URL?
     @State private var error: String?
     @State private var loading = true
+    @State private var refitToken = 0
 
     var body: some View {
         NavigationStack {
@@ -41,8 +42,9 @@ struct ScanPreviewView: View {
 
                 bottomPanel
             }
-            .navigationTitle(scan.name)
+            .navigationTitle($scan.name)
             .navigationBarTitleDisplayMode(.inline)
+            .onChange(of: scan.name) { _, _ in dirty = true }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(dirty ? "Discard" : "Close") { dismiss() }
@@ -50,12 +52,13 @@ struct ScanPreviewView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(history.isEmpty)
                     Button { redo() } label: { Image(systemName: "arrow.uturn.forward") }.disabled(future.isEmpty)
-                    if let modelURL {
-                        Menu {
-                            Button { previewItem = modelURL } label: { Label("View in AR", systemImage: "arkit") }
+                    Menu {
+                        Button { edit { $0 = $0.straightened() }; selection = nil; refitToken += 1 } label: { Label("Square up walls", systemImage: "square.on.square.dashed") }
+                        if let modelURL {
+                            Button { previewItem = modelURL } label: { Label("View scan in AR", systemImage: "arkit") }
                             ShareLink(item: modelURL) { Label("Share USDZ", systemImage: "square.and.arrow.up") }
-                        } label: { Image(systemName: "ellipsis.circle") }
-                    }
+                        }
+                    } label: { Image(systemName: "ellipsis.circle") }
                     Button { Task { await save() } } label: {
                         if saving { ProgressView() } else { Text("Save").bold() }
                     }
@@ -81,7 +84,7 @@ struct ScanPreviewView: View {
         } else {
             switch mode {
             case .plan:
-                PlanEditorView(plan: planBinding, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true })
+                PlanEditorView(plan: planBinding, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true }, refitToken: refitToken)
             case .walls:
                 WallElevationView(plan: planBinding, wall: $wallIndex, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true })
             case .model:
@@ -110,6 +113,12 @@ struct ScanPreviewView: View {
                     if let k = plan.openings.firstIndex(where: { $0.id == id }) {
                         OpeningPanel(plan: planBinding, index: k, onEdit: edit, onDelete: {
                             edit { $0.openings.remove(at: k) }; selection = .wall(plan.openings[k].wall)
+                        })
+                    }
+                case .object(let id):
+                    if let k = plan.objects.firstIndex(where: { $0.id == id }) {
+                        ObjectPanel(plan: planBinding, index: k, onEdit: edit, onDelete: {
+                            edit { $0.objects.remove(at: k) }; selection = nil
                         })
                     }
                 case .corner(let i):
@@ -276,6 +285,35 @@ private struct OpeningPanel: View {
                 MeasureField(title: "From left", meters: o.left) { m in
                     onEdit { $0.openings[index].offset = m + o.width / 2; $0.clampOpenings(on: o.wall) }
                 }
+            }
+        }
+        .padding()
+    }
+}
+
+private struct ObjectPanel: View {
+    @Binding var plan: FloorPlan
+    let index: Int
+    var onEdit: ((inout FloorPlan) -> Void) -> Void
+    var onDelete: () -> Void
+
+    private var o: PlanObject { plan.objects[index] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                TextField("Name", text: Binding(get: { o.category.capitalized }, set: { v in onEdit { $0.objects[index].category = v } }))
+                    .font(.headline).textFieldStyle(.roundedBorder).frame(maxWidth: 220)
+                Spacer()
+                Button { onEdit { $0.objects[index].rotation += .pi / 2 } } label: { Image(systemName: "rotate.right") }
+                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
+            }
+            HStack(spacing: 12) {
+                MeasureField(title: "Width", meters: o.width) { m in onEdit { $0.objects[index].width = max(0.05, m) } }
+                MeasureField(title: "Depth", meters: o.depth) { m in onEdit { $0.objects[index].depth = max(0.05, m) } }
+                MeasureField(title: "Height", meters: o.height) { m in onEdit { $0.objects[index].height = max(0.05, m) } }
+                Spacer()
+                Text("Drag to move").font(.caption).foregroundStyle(.secondary)
             }
         }
         .padding()

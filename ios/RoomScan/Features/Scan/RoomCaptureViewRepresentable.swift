@@ -1,6 +1,7 @@
 import SwiftUI
 import RoomPlan
 import ARKit
+import CoreImage
 
 /// Wraps Apple's RoomCaptureView (RoomPlan) for SwiftUI.
 /// Controller drives start / stop and receives the processed CapturedRoom.
@@ -95,6 +96,15 @@ final class ScanController {
     func finished(room: CapturedRoom) {
         finalRoom = room
         phase = .done
+    }
+
+    /// Still photo from the live AR camera feed (portrait-oriented)
+    func capturePhoto() -> UIImage? {
+        guard let frame = captureView?.captureSession.arSession.currentFrame else { return nil }
+        let ci = CIImage(cvPixelBuffer: frame.capturedImage).oriented(.right)
+        let context = CIContext()
+        guard let cg = context.createCGImage(ci, from: ci.extent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 
     /// Snapshot of the rendered model view (used as a thumbnail)

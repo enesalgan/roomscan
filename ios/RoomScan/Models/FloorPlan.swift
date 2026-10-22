@@ -230,3 +230,91 @@ enum Measure {
         return nil
     }
 }
+
+// MARK: - Clean-up: straighten, merge collinear walls, square corners
+
+extension FloorPlan {
+
+    /// Rotates the whole plan so its longest wall is horizontal, merges collinear walls,
+    /// snaps near-orthogonal walls to exact 0°/90°, rebuilds corners from wall lines,
+    /// then re-attaches openings at their original positions. Objects follow the rotation.
+    func straightened(snapToleranceDegrees: Double = 10) -> FloorPlan {
+        guard wallCount >= 3 else { return self }
+        var p = self
+
+        // 1) Rotate so the longest wall is horizontal
+        var longest = 0
+        for i in 0..<wallCount where wallLength(i) > wallLength(longest) { longest = i }
+        let d = wallDirection(longest)
+        let angle = -atan2(d.y, d.x)
+        let pivot = PlanPoint(x: (bounds.min.x + bounds.max.x) / 2, y: (bounds.min.y + bounds.max.y) / 2)
+        func rot(_ pt: PlanPoint) -> PlanPoint {
+            let v = pt - pivot
+            return PlanPoint(x: v.x * cos(angle) - v.y * sin(angle), y: v.x * sin(angle) + v.y * cos(angle)) + pivot
+        }
+        p.corners = corners.map(rot)
+        p.objects = objects.map { var o = $0; o.center = rot(o.center); o.rotation += angle; return o }
+
+        // Remember where openings are in space before walls move
+        let openingAnchors: [(PlanOpening, PlanPoint)] = openings.map { ($0, rot(point(onWall: $0.wall, at: $0.offset))) }
+
+        // 2) Merge consecutive collinear walls (angle diff < 6°)
+        var pts = p.corners
+        var changed = true
+        while changed && pts.count > 3 {
+            changed = false
+            for i in 0..<pts.count {
+                let a = pts[(i - 1 + pts.count) % pts.count], b = pts[i], c = pts[(i + 1) % pts.count]
+                let d1 = (b - a).normalized, d2 = (c - b).normalized
+                let ang = acos(min(max(d1.dot(d2), -1), 1)) * 180 / .pi
+                if ang < 6 || (b - a).length < 0.05 || (c - b).length < 0.05 {
+                    pts.remove(at: i); changed = true; break
+                }
+            }
+        }
+
+        // 3) Snap wall directions, then rebuild corners as intersections of consecutive wall lines
+        let n = pts.count
+        var dirs: [PlanPoint] = []
+        var mids: [PlanPoint] = []
+        for i in 0..<n {
+            let a = pts[i], b = pts[(i + 1) % n]
+            var dir = (b - a).normalized
+            let deg = atan2(dir.y, dir.x) * 180 / .pi
+            let nearest = (deg / 90).rounded() * 90
+            if abs(deg - nearest) <= snapToleranceDegrees {
+                let r = nearest * .pi / 180
+                dir = PlanPoint(x: cos(r).rounded(), y: sin(r).rounded())
+            }
+            dirs.append(dir)
+            mids.append((a + b) * 0.5)
+        }
+        var newCorners: [PlanPoint] = []
+        for i in 0..<n {
+            let j = (i - 1 + n) % n
+            // line j: mids[j] + dirs[j]*t ; line i: mids[i] + dirs[i]*s
+            let denom = dirs[j].cross(dirs[i])
+            if abs(denom) < 1e-4 {
+                newCorners.append(pts[i])   // parallel — keep original corner
+            } else {
+                let t = (mids[i] - mids[j]).cross(dirs[i]) / denom
+                newCorners.append(mids[j] + dirs[j] * t)
+            }
+        }
+        p.corners = newCorners
+
+        // 4) Re-attach openings to the nearest new wall
+        p.openings = openingAnchors.compactMap { (o, anchor) in
+            guard let hit = p.nearestWall(to: anchor), hit.distance < 0.8 else { return nil }
+            var o2 = o; o2.wall = hit.wall; o2.offset = hit.t
+            return o2
+        }
+        for i in 0..<p.wallCount { p.clampOpenings(on: i) }
+
+        // 5) Normalize origin to (0,0) for tidy coordinates
+        let b = p.bounds
+        p.corners = p.corners.map { $0 - b.min }
+        p.objects = p.objects.map { var o = $0; o.center = o.center - b.min; return o }
+        return p
+    }
+}

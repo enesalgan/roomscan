@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Elevation of one wall: height, length, and every opening with its width / height / sill
-/// and distance from the wall ends. Drag an opening sideways to move it. ◀ ▶ switch walls.
+/// Elevation of one wall: length, height, and every opening with width / height / sill / head
+/// and distances to the wall ends — all as proper dimension lines. Drag an opening sideways to move it.
 struct WallElevationView: View {
     @Binding var plan: FloorPlan
     @Binding var wall: Int
@@ -35,8 +35,13 @@ struct WallElevationView: View {
                 .onTapGesture { loc in
                     if let id = hit(loc, t: t) { selection = PlanSelection.opening(id) } else { selection = PlanSelection.wall(wall) }
                 }
-                .overlay(alignment: .leading) { arrow("arrow.left") { step(-1) } }
-                .overlay(alignment: .trailing) { arrow("arrow.right") { step(1) } }
+                .overlay(alignment: .top) {
+                    Text("Wall \(wall + 1) of \(plan.wallCount)")
+                        .font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(.regularMaterial, in: Capsule()).padding(.top, 8)
+                }
+                .overlay(alignment: .leading) { arrow("chevron.left") { step(-1) } }
+                .overlay(alignment: .trailing) { arrow("chevron.right") { step(1) } }
         }
     }
 
@@ -47,10 +52,10 @@ struct WallElevationView: View {
 
     private func arrow(_ name: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: name).font(.title2).padding(14)
+            Image(systemName: name).font(.title3.weight(.semibold)).frame(width: 44, height: 44)
                 .background(.regularMaterial, in: Circle())
         }
-        .padding(8)
+        .padding(6)
     }
 
     // MARK: Transform (wall x → screen x, height → screen y up)
@@ -59,9 +64,9 @@ struct WallElevationView: View {
 
     private func transform(for size: CGSize) -> T {
         let L = max(plan.wallLength(wall), 0.5), H = max(plan.wallHeight, 1)
-        let scale = min((size.width - 150) / L, (size.height - 150) / H)
+        let scale = min((size.width - 170) / L, (size.height - 190) / H)
         let originX = (size.width - L * scale) / 2
-        let floorY = size.height / 2 + H * scale / 2
+        let floorY = size.height / 2 + H * scale / 2 - 10
         return T(scale: scale, originX: originX, floorY: floorY)
     }
 
@@ -79,85 +84,99 @@ struct WallElevationView: View {
     private func draw(_ ctx: inout GraphicsContext, t: T) {
         let L = plan.wallLength(wall), H = plan.wallHeight
         let wallRect = CGRect(x: t.originX, y: t.floorY - H * t.scale, width: L * t.scale, height: H * t.scale)
+        let ink = Color(.label)
+        let depth: CGFloat = 20
 
-        // side walls (perspective hint)
-        let depth: CGFloat = 22
+        // side returns (perspective hint)
         var sides = Path()
         sides.move(to: CGPoint(x: wallRect.minX, y: wallRect.minY)); sides.addLine(to: CGPoint(x: wallRect.minX - depth, y: wallRect.minY - depth))
         sides.addLine(to: CGPoint(x: wallRect.minX - depth, y: wallRect.maxY + depth)); sides.addLine(to: CGPoint(x: wallRect.minX, y: wallRect.maxY)); sides.closeSubpath()
         sides.move(to: CGPoint(x: wallRect.maxX, y: wallRect.minY)); sides.addLine(to: CGPoint(x: wallRect.maxX + depth, y: wallRect.minY - depth))
         sides.addLine(to: CGPoint(x: wallRect.maxX + depth, y: wallRect.maxY + depth)); sides.addLine(to: CGPoint(x: wallRect.maxX, y: wallRect.maxY)); sides.closeSubpath()
-        ctx.fill(sides, with: .color(.secondary.opacity(0.25)))
-        ctx.stroke(sides, with: .color(Color(.label)), lineWidth: 1)
+        ctx.fill(sides, with: .color(ink.opacity(0.12)))
+        ctx.stroke(sides, with: .color(ink.opacity(0.6)), lineWidth: 1)
 
         ctx.fill(Path(wallRect), with: .color(Color(.systemBackground)))
-        ctx.stroke(Path(wallRect), with: .color(Color(.label)), lineWidth: 2)
+        ctx.stroke(Path(wallRect), with: .color(ink), lineWidth: 2)
 
-        // openings
-        for o in plan.openings(on: wall) {
+        let openings = plan.openings(on: wall)
+        for o in openings {
             let r = rect(o, t)
             let selected = selection == .opening(o.id)
+            let stroke = selected ? Color.accentColor : ink
             switch o.kind {
             case .door:
-                ctx.fill(Path(r), with: .color(.brown.opacity(0.15)))
-                ctx.stroke(Path(r.insetBy(dx: 6, dy: 6)), with: .color(.secondary), lineWidth: 1)
+                ctx.fill(Path(r), with: .color(.brown.opacity(0.12)))
+                ctx.stroke(Path(r.insetBy(dx: 7, dy: 7)), with: .color(ink.opacity(0.4)), lineWidth: 1)
             case .window:
-                ctx.fill(Path(r), with: .color(.cyan.opacity(0.2)))
+                ctx.fill(Path(r), with: .color(.cyan.opacity(0.18)))
                 var cross = Path()
                 cross.move(to: CGPoint(x: r.midX, y: r.minY)); cross.addLine(to: CGPoint(x: r.midX, y: r.maxY))
-                ctx.stroke(cross, with: .color(.secondary), lineWidth: 1)
+                cross.move(to: CGPoint(x: r.minX, y: r.midY)); cross.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+                ctx.stroke(cross, with: .color(ink.opacity(0.4)), lineWidth: 1)
             case .opening:
-                ctx.fill(Path(r), with: .color(.secondary.opacity(0.08)))
+                ctx.fill(Path(r), with: .color(ink.opacity(0.05)))
             }
-            ctx.stroke(Path(r), with: .color(selected ? .accentColor : Color(.label)), lineWidth: selected ? 3 : 1.5)
+            ctx.stroke(Path(r), with: .color(stroke), lineWidth: selected ? 3 : 1.5)
 
-            // labels: width under, height at right, sill
-            label(&ctx, Measure.ftIn(o.width), at: CGPoint(x: r.midX, y: r.maxY + 12), color: selected ? .accentColor : .blue)
-            label(&ctx, Measure.ftIn(o.height), at: CGPoint(x: r.maxX + 22, y: r.midY), color: .blue, angle: -.pi / 2)
+            // width (below opening, inside)
+            dimensionLine(&ctx, from: CGPoint(x: r.minX, y: r.maxY + 14), to: CGPoint(x: r.maxX, y: r.maxY + 14), text: Measure.ftIn(o.width), emphasized: selected)
+            // height (right of opening)
+            dimensionLine(&ctx, from: CGPoint(x: r.maxX + 16, y: r.maxY), to: CGPoint(x: r.maxX + 16, y: r.minY), text: Measure.ftIn(o.height), emphasized: selected)
+            // sill (bottom → floor) and head gap (top → ceiling)
             if o.sill > 0.02 {
-                dimLine(&ctx, from: CGPoint(x: r.midX, y: r.maxY), to: CGPoint(x: r.midX, y: t.floorY), text: Measure.ftIn(o.sill))
+                dimensionLine(&ctx, from: CGPoint(x: r.minX - 16, y: wallRect.maxY), to: CGPoint(x: r.minX - 16, y: r.maxY), text: Measure.ftIn(o.sill), emphasized: false)
             }
-            if selected {
-                // distances to wall ends
-                if o.left > 0.02 {
-                    dimLine(&ctx, from: CGPoint(x: wallRect.minX, y: r.minY - 14), to: CGPoint(x: r.minX, y: r.minY - 14), text: Measure.ftIn(o.left))
-                }
-                let right = L - o.right
-                if right > 0.02 {
-                    dimLine(&ctx, from: CGPoint(x: r.maxX, y: r.minY - 14), to: CGPoint(x: wallRect.maxX, y: r.minY - 14), text: Measure.ftIn(right))
-                }
+            let head = H - o.sill - o.height
+            if head > 0.02 {
+                dimensionLine(&ctx, from: CGPoint(x: r.minX - 16, y: r.minY), to: CGPoint(x: r.minX - 16, y: wallRect.minY), text: Measure.ftIn(head), emphasized: false)
             }
         }
 
-        // wall dims
-        dimLine(&ctx, from: CGPoint(x: wallRect.minX, y: wallRect.maxY + 34), to: CGPoint(x: wallRect.maxX, y: wallRect.maxY + 34), text: Measure.ftIn(L))
-        dimLine(&ctx, from: CGPoint(x: wallRect.minX - depth - 26, y: wallRect.maxY), to: CGPoint(x: wallRect.minX - depth - 26, y: wallRect.minY), text: Measure.ftIn(H))
-    }
-
-    private func dimLine(_ ctx: inout GraphicsContext, from a: CGPoint, to b: CGPoint, text: String) {
-        var p = Path()
-        p.move(to: a); p.addLine(to: b)
-        let vertical = abs(a.x - b.x) < 1
-        let tick: CGFloat = 5
-        if vertical {
-            p.move(to: CGPoint(x: a.x - tick, y: a.y)); p.addLine(to: CGPoint(x: a.x + tick, y: a.y))
-            p.move(to: CGPoint(x: b.x - tick, y: b.y)); p.addLine(to: CGPoint(x: b.x + tick, y: b.y))
-        } else {
-            p.move(to: CGPoint(x: a.x, y: a.y - tick)); p.addLine(to: CGPoint(x: a.x, y: a.y + tick))
-            p.move(to: CGPoint(x: b.x, y: b.y - tick)); p.addLine(to: CGPoint(x: b.x, y: b.y + tick))
+        // distances between wall ends and openings (chain along the top)
+        if !openings.isEmpty {
+            let y = wallRect.minY - 18
+            var cursorX = wallRect.minX, cursorT = 0.0
+            for o in openings {
+                let r = rect(o, t)
+                if o.left - cursorT > 0.03 {
+                    dimensionLine(&ctx, from: CGPoint(x: cursorX, y: y), to: CGPoint(x: r.minX, y: y), text: Measure.ftIn(o.left - cursorT), emphasized: false)
+                }
+                cursorX = r.maxX; cursorT = o.right
+            }
+            if L - cursorT > 0.03 {
+                dimensionLine(&ctx, from: CGPoint(x: cursorX, y: y), to: CGPoint(x: wallRect.maxX, y: y), text: Measure.ftIn(L - cursorT), emphasized: false)
+            }
         }
-        ctx.stroke(p, with: .color(.secondary), lineWidth: 1)
-        label(&ctx, text, at: CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2), color: .blue, angle: vertical ? -.pi / 2 : 0)
+
+        // overall: length (bottom), height (left, outside the return)
+        dimensionLine(&ctx, from: CGPoint(x: wallRect.minX, y: wallRect.maxY + depth + 30), to: CGPoint(x: wallRect.maxX, y: wallRect.maxY + depth + 30), text: Measure.ftIn(L), emphasized: true)
+        dimensionLine(&ctx, from: CGPoint(x: wallRect.minX - depth - 34, y: wallRect.maxY), to: CGPoint(x: wallRect.minX - depth - 34, y: wallRect.minY), text: Measure.ftIn(H), emphasized: true)
     }
 
-    private func label(_ ctx: inout GraphicsContext, _ text: String, at p: CGPoint, color: Color, angle: Double = 0) {
-        let resolved = ctx.resolve(Text(text).font(.caption.bold()).foregroundStyle(color))
+    private func dimensionLine(_ ctx: inout GraphicsContext, from a: CGPoint, to b: CGPoint, text: String, emphasized: Bool) {
+        let len = hypot(b.x - a.x, b.y - a.y)
+        guard len > 1 else { return }
+        let angle = atan2(b.y - a.y, b.x - a.x)
+        let color: Color = emphasized ? .accentColor : Color(.label).opacity(0.75)
+        ctx.drawLayer { l in
+            l.translateBy(x: a.x, y: a.y)
+            l.rotate(by: .radians(angle))
+            var p = Path()
+            p.move(to: .zero); p.addLine(to: CGPoint(x: len, y: 0))
+            p.move(to: CGPoint(x: 0, y: -5)); p.addLine(to: CGPoint(x: 0, y: 5))
+            p.move(to: CGPoint(x: len, y: -5)); p.addLine(to: CGPoint(x: len, y: 5))
+            l.stroke(p, with: .color(color), lineWidth: emphasized ? 1.5 : 1)
+        }
+        var a2 = angle
+        if a2 > .pi / 2 { a2 -= .pi } else if a2 < -.pi / 2 { a2 += .pi }
+        let resolved = ctx.resolve(Text(text).font(emphasized ? .caption.bold() : .caption2.bold()).foregroundStyle(color))
         let size = resolved.measure(in: CGSize(width: 200, height: 40))
         ctx.drawLayer { l in
-            l.translateBy(x: p.x, y: p.y)
-            l.rotate(by: .radians(angle))
+            l.translateBy(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+            l.rotate(by: .radians(a2))
             l.fill(Path(roundedRect: CGRect(x: -size.width / 2 - 4, y: -size.height / 2 - 1, width: size.width + 8, height: size.height + 2), cornerRadius: 4),
-                   with: .color(Color(.systemGroupedBackground).opacity(0.92)))
+                   with: .color(Color(.systemGroupedBackground)))
             l.draw(resolved, at: .zero, anchor: .center)
         }
     }
