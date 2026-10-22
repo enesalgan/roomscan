@@ -24,7 +24,6 @@ struct ScanSessionView: View {
         ZStack {
             RoomCaptureViewRepresentable(controller: controller)
                 .ignoresSafeArea()
-                .onAppear { DispatchQueue.main.async { controller.start() } }
 
             if flash { Color.white.ignoresSafeArea().transition(.opacity) }
 
