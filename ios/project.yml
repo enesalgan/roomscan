@@ -62,5 +62,5 @@ targets:
       testTargets: []
       storeKitConfiguration: RoomScan/Resources/Products.storekit
       run:
-        enableGPUValidationMode: disabled
+        enableGPUValidationMode: false
         enableGPUFrameCaptureMode: disabled
