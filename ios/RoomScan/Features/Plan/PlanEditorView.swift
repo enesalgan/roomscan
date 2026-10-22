@@ -196,17 +196,30 @@ struct PlanEditorView: View {
                           extTo: toScreen(plan.wallEnd(i) + n * Double(wallPx / 2 / scale)))
         }
 
-        // Overall size (top + left), further out
+        // Overall size (top + left) — only when no single wall already shows that length
         let b = plan.bounds
         let offAll = Double((wallPx / 2 + 62) / scale)
-        dimensionLine(&ctx, from: toScreen(PlanPoint(x: b.min.x, y: b.min.y - offAll)), to: toScreen(PlanPoint(x: b.max.x, y: b.min.y - offAll)),
-                      text: Measure.ftIn(plan.width), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
-        dimensionLine(&ctx, from: toScreen(PlanPoint(x: b.min.x - offAll, y: b.max.y)), to: toScreen(PlanPoint(x: b.min.x - offAll, y: b.min.y)),
-                      text: Measure.ftIn(plan.depth), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
+        let hasWall = { (len: Double, horizontal: Bool) -> Bool in
+            (0..<plan.wallCount).contains { i in
+                let d = plan.wallDirection(i)
+                let isH = abs(d.x) > abs(d.y)
+                return isH == horizontal && abs(plan.wallLength(i) - len) < 0.02
+            }
+        }
+        if !hasWall(plan.width, true) {
+            dimensionLine(&ctx, from: toScreen(PlanPoint(x: b.min.x, y: b.min.y - offAll)), to: toScreen(PlanPoint(x: b.max.x, y: b.min.y - offAll)),
+                          text: Measure.ftIn(plan.width), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
+        }
+        if !hasWall(plan.depth, false) {
+            dimensionLine(&ctx, from: toScreen(PlanPoint(x: b.min.x - offAll, y: b.max.y)), to: toScreen(PlanPoint(x: b.min.x - offAll, y: b.min.y)),
+                          text: Measure.ftIn(plan.depth), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
+        }
 
-        // Opening dimensions for selection
-        if case .wall(let i) = selection { for o in plan.openings(on: i) { drawOpeningDims(&ctx, o) } }
-        else if case .opening(let id) = selection, let o = plan.openings.first(where: { $0.id == id }) { drawOpeningDims(&ctx, o) }
+        // Opening dimensions (always visible; emphasized when selected)
+        for o in plan.openings {
+            let emphasized = selection == .opening(o.id) || selection == .wall(o.wall)
+            drawOpeningDims(&ctx, o, emphasized: emphasized)
+        }
     }
 
     private func drawDotGrid(_ ctx: inout GraphicsContext, size: CGSize) {
@@ -284,18 +297,28 @@ struct PlanEditorView: View {
         }
     }
 
-    private func drawOpeningDims(_ ctx: inout GraphicsContext, _ o: PlanOpening) {
+    private func drawOpeningDims(_ ctx: inout GraphicsContext, _ o: PlanOpening, emphasized: Bool) {
         let i = o.wall
         let n = plan.inwardNormal(i)
-        let off = Double((wallPx / 2 + 20) / scale)
+        let off = Double((wallPx / 2 + 18) / scale)
         func pt(_ t: Double) -> CGPoint { toScreen(plan.point(onWall: i, at: t) + n * off) }
-        dimensionLine(&ctx, from: pt(o.left), to: pt(o.right), text: Measure.ftIn(o.width), color: dim, emphasized: true, extFrom: nil, extTo: nil)
-        if o.left > 0.03 {
+        func ext(_ t: Double) -> CGPoint { toScreen(plan.point(onWall: i, at: t) + n * Double(wallPx / 2 / scale)) }
+        dimensionLine(&ctx, from: pt(o.left), to: pt(o.right), text: Measure.ftIn(o.width), color: emphasized ? dim : .secondary,
+                      emphasized: emphasized, extFrom: ext(o.left), extTo: ext(o.right))
+        // distance to the nearest wall end on each side (skip if another opening sits in between)
+        let others = plan.openings(on: i).filter { $0.id != o.id }
+        let leftBlocked = others.contains { $0.right <= o.left + 0.01 }
+        let rightBlocked = others.contains { $0.left >= o.right - 0.01 }
+        if o.left > 0.03, !leftBlocked {
             dimensionLine(&ctx, from: pt(0), to: pt(o.left), text: Measure.ftIn(o.left), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
         }
         let rightGap = plan.wallLength(i) - o.right
-        if rightGap > 0.03 {
+        if rightGap > 0.03, !rightBlocked {
             dimensionLine(&ctx, from: pt(o.right), to: pt(plan.wallLength(i)), text: Measure.ftIn(rightGap), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
+        }
+        // gaps between neighbouring openings
+        if let next = others.filter({ $0.left >= o.right - 0.01 }).min(by: { $0.left < $1.left }), next.left - o.right > 0.03 {
+            dimensionLine(&ctx, from: pt(o.right), to: pt(next.left), text: Measure.ftIn(next.left - o.right), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
         }
     }
 
@@ -310,10 +333,17 @@ struct PlanEditorView: View {
             l.fill(r, with: .color(sel ? dim.opacity(0.15) : ink.opacity(0.06)))
             l.stroke(r, with: .color(sel ? dim : ink.opacity(0.55)), lineWidth: sel ? 2 : 1)
             if w > 34 && h > 22 {
-                l.draw(Text(o.category.capitalized).font(.system(size: 9, weight: .semibold)).foregroundStyle(sel ? dim : .secondary),
-                       at: CGPoint(x: 0, y: -6), anchor: .center)
-                l.draw(Text("\(Measure.ftIn(o.width)) × \(Measure.ftIn(o.depth))").font(.system(size: 8)).foregroundStyle(.secondary),
-                       at: CGPoint(x: 0, y: 6), anchor: .center)
+                // keep text upright
+                var a = o.rotation.truncatingRemainder(dividingBy: 2 * .pi)
+                if a > .pi { a -= 2 * .pi } else if a < -.pi { a += 2 * .pi }
+                let flip = a > .pi / 2 || a < -.pi / 2
+                l.drawLayer { t in
+                    if flip { t.rotate(by: .radians(.pi)) }
+                    t.draw(Text(o.category.capitalized).font(.system(size: 9, weight: .semibold)).foregroundStyle(sel ? dim : .secondary),
+                           at: CGPoint(x: 0, y: -6), anchor: .center)
+                    t.draw(Text("\(Measure.ftIn(o.width)) × \(Measure.ftIn(o.depth))").font(.system(size: 8)).foregroundStyle(.secondary),
+                           at: CGPoint(x: 0, y: 6), anchor: .center)
+                }
             }
         }
     }

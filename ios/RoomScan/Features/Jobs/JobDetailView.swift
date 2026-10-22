@@ -27,7 +27,6 @@ struct JobDetailView: View {
                     customerSection(job)
                     scansSection(job)
                     PhotosSection(job: job, photos: $photos)
-                    JobTimerSection(job: job)
                     if let n = job.notes, !n.isEmpty { Section("Notes") { Text(n) } }
                     if let error { Text(error).foregroundStyle(.red).font(.footnote) }
                 }

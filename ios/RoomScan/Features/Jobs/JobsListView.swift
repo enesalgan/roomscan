@@ -14,7 +14,7 @@ struct JobsListView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                LazyVStack(spacing: 12, pinnedViews: []) {
+                LazyVStack(spacing: 8, pinnedViews: []) {
                     statusChips
                     if let error { Text(error).foregroundStyle(.red).font(.footnote) }
                     if filtered.isEmpty && !loading {
@@ -57,7 +57,7 @@ struct JobsListView: View {
     private var statusChips: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
-                chip(title: "All", icon: "square.grid.2x2", count: jobs.count, color: .primary, selected: filter == nil) { filter = nil }
+                chip(title: "All", icon: "square.grid.2x2", count: jobs.filter { $0.status != .archived }.count, color: .accentColor, selected: filter == nil) { filter = nil }
                 ForEach(JobStatus.allCases.filter { $0 != .archived || filter == .archived || (counts[.archived] ?? 0) > 0 }) { s in
                     chip(title: s.title, icon: s.systemImage, count: counts[s] ?? 0, color: s.color, selected: filter == s) {
                         filter = (filter == s) ? nil : s
@@ -124,43 +124,40 @@ struct JobsListView: View {
 struct JobCard: View {
     let job: Job
 
+    private var subtitle: String {
+        [job.customerName, job.addressSummary.nilIfEmpty].compactMap { $0?.nilIfEmpty }.joined(separator: "  ·  ")
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(job.title).font(.headline).lineLimit(1)
-                    if let c = job.customerName, !c.isEmpty {
-                        Label(c, systemImage: "person").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
-                Spacer()
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .center, spacing: 8) {
+                Text(job.title).font(.headline).lineLimit(1)
+                Spacer(minLength: 8)
+                Text(job.updatedAt.formatted(.relative(presentation: .named)))
+                    .font(.caption2).foregroundStyle(.tertiary).lineLimit(1)
                 StatusChip(status: job.status)
             }
-
-            if !job.addressSummary.isEmpty {
-                Label(job.addressSummary, systemImage: "mappin.and.ellipse")
-                    .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            if !subtitle.isEmpty {
+                Text(subtitle).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }
-
-            HStack(spacing: 12) {
-                if let d = job.scheduledAt {
-                    Label(d.formatted(.dateTime.month(.abbreviated).day().hour().minute()), systemImage: "calendar")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(d < Date() ? Color.secondary : Color.purple)
+            if job.scheduledAt != nil || job.estimateAmount != nil {
+                HStack(spacing: 12) {
+                    if let d = job.scheduledAt {
+                        Label(d.formatted(.dateTime.month(.abbreviated).day().hour().minute()), systemImage: "calendar")
+                            .foregroundStyle(d < Date() ? Color.secondary : Color.purple)
+                    }
+                    if let e = job.estimateAmount {
+                        Label(e.formatted(.currency(code: job.estimateCurrency).precision(.fractionLength(0))), systemImage: "dollarsign.circle")
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                if let e = job.estimateAmount {
-                    Label(e.formatted(.currency(code: job.estimateCurrency).precision(.fractionLength(0))), systemImage: "dollarsign.circle")
-                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text(job.updatedAt.formatted(.relative(presentation: .named)))
-                    .font(.caption2).foregroundStyle(.tertiary)
+                .font(.caption.weight(.medium))
             }
         }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .padding(.vertical, 12).padding(.leading, 16).padding(.trailing, 12)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14))
         .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 2).fill(job.status.color).frame(width: 4).padding(.vertical, 12).padding(.leading, 0)
+            RoundedRectangle(cornerRadius: 2).fill(job.status.color).frame(width: 3).padding(.vertical, 12).padding(.leading, 6)
         }
     }
 }
