@@ -1,0 +1,63 @@
+name: RoomScan
+options:
+  bundleIdPrefix: com.lixisoft
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+packages:
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: "2.24.0"
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    DEVELOPMENT_TEAM: ""          # ← Apple Developer Team ID (Xcode > Signing)
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+
+targets:
+  RoomScan:
+    type: application
+    platform: iOS
+    sources:
+      - path: RoomScan
+    dependencies:
+      - package: Supabase
+        product: Supabase
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.lixisoft.roomscan
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_FILE: RoomScan/Resources/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    entitlements:
+      path: RoomScan/Resources/RoomScan.entitlements
+      properties: {}
+    info:
+      path: RoomScan/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: RoomScan
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UISupportedInterfaceOrientations~ipad:
+          [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        NSCameraUsageDescription: RoomScan uses the camera and LiDAR to scan rooms and take job photos.
+        NSPhotoLibraryUsageDescription: Pick photos from your library to attach to a job.
+        NSPhotoLibraryAddUsageDescription: Save job photos to your library.
+        NSLocationWhenInUseUsageDescription: Used to fill in the job address from your current location.
+        UIRequiredDeviceCapabilities: [arkit]
+        ITSAppUsesNonExemptEncryption: false
+        SUPABASE_URL: $(SUPABASE_URL)
+        SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
+    configFiles:
+      Debug: Config/Secrets.xcconfig
+      Release: Config/Secrets.xcconfig
+    scheme:
+      testTargets: []
+      storeKitConfiguration: RoomScan/Resources/Products.storekit

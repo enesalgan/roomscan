@@ -1,0 +1,62 @@
+{
+  "identifier" : "8A2C1F4E-ROOMSCAN",
+  "nonRenewingSubscriptions" : [ ],
+  "products" : [
+    {
+      "displayPrice" : "9.99",
+      "familyShareable" : false,
+      "internalID" : "credits10",
+      "localizations" : [
+        { "description" : "10 additional room scans", "displayName" : "10 Scan Pack", "locale" : "en_US" }
+      ],
+      "productID" : "com.lixisoft.roomscan.credits10",
+      "referenceName" : "10 Scan Pack",
+      "type" : "Consumable"
+    }
+  ],
+  "settings" : { "_applicationInternalID" : "", "_developerTeamID" : "", "_lastSynced" : 0 },
+  "subscriptionGroups" : [
+    {
+      "id" : "roomscan_pro",
+      "localizations" : [ ],
+      "name" : "RoomScan Pro",
+      "subscriptions" : [
+        {
+          "adHocOffers" : [ ],
+          "codeOffers" : [ ],
+          "displayPrice" : "29.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "pro_monthly",
+          "introductoryOffer" : null,
+          "localizations" : [
+            { "description" : "Unlimited scans for your branch", "displayName" : "Pro Monthly", "locale" : "en_US" }
+          ],
+          "productID" : "com.lixisoft.roomscan.pro.monthly",
+          "recurringSubscriptionPeriod" : "P1M",
+          "referenceName" : "Pro Monthly",
+          "subscriptionGroupID" : "roomscan_pro",
+          "type" : "RecurringSubscription"
+        },
+        {
+          "adHocOffers" : [ ],
+          "codeOffers" : [ ],
+          "displayPrice" : "249.99",
+          "familyShareable" : false,
+          "groupNumber" : 1,
+          "internalID" : "pro_yearly",
+          "introductoryOffer" : null,
+          "localizations" : [
+            { "description" : "Unlimited scans for your branch — 2 months free", "displayName" : "Pro Yearly", "locale" : "en_US" }
+          ],
+          "productID" : "com.lixisoft.roomscan.pro.yearly",
+          "recurringSubscriptionPeriod" : "P1Y",
+          "referenceName" : "Pro Yearly",
+          "subscriptionGroupID" : "roomscan_pro",
+          "type" : "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version" : { "major" : 3, "minor" : 0 }
+}

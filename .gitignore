@@ -1,0 +1,16 @@
+# Xcode / XcodeGen
+ios/RoomScan.xcodeproj/
+ios/*.xcworkspace/
+ios/DerivedData/
+ios/build/
+*.xcuserstate
+xcuserdata/
+.DS_Store
+
+# Secrets — fill locally, never commit
+ios/Config/Secrets.xcconfig
+
+# Supabase CLI
+supabase/.temp/
+supabase/.branches/
+.env
