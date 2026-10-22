@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import RoomPlan
 
 /// Full-screen LiDAR scan: scan → stop → RoomPlan builds the model → saved automatically → caller opens the 2D plan.
@@ -19,6 +20,9 @@ struct ScanSessionView: View {
     @State private var photoCount = 0
     @State private var flash = false
     @State private var lastThumb: UIImage?
+    @State private var autoCaptured = 0
+    private let autoTimer = Timer.publish(every: 4, on: .main, in: .common).autoconnect()
+    private let autoCaptureLimit = 24
 
     var body: some View {
         ZStack {
@@ -52,6 +56,12 @@ struct ScanSessionView: View {
         }
         .onChange(of: controller.phase) { _, phase in
             if phase == .done { Task { await save() } }
+        }
+        .onReceive(autoTimer) { _ in
+            // automatic keyframes while scanning → job photos
+            guard controller.phase == .scanning, autoCaptured < autoCaptureLimit else { return }
+            autoCaptured += 1
+            capturePhoto(manual: false)
         }
         .sheet(isPresented: $showPaywall, onDismiss: { dismiss() }) { PaywallView() }
         .alert("Scan error", isPresented: Binding(get: { controller.error != nil || saveError != nil },
@@ -116,7 +126,7 @@ struct ScanSessionView: View {
             Spacer()
 
             // shutter
-            Button { capturePhoto() } label: {
+            Button { capturePhoto(manual: true) } label: {
                 ZStack {
                     Circle().stroke(.white, lineWidth: 3).frame(width: 56, height: 56)
                     Circle().fill(.white).frame(width: 44, height: 44)
@@ -129,14 +139,17 @@ struct ScanSessionView: View {
 
     // MARK: Actions
 
-    private func capturePhoto() {
+    private func capturePhoto(manual: Bool) {
         guard let image = controller.capturePhoto(), let userId = session.userId else { return }
-        withAnimation(.easeOut(duration: 0.08)) { flash = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { withAnimation { flash = false } }
+        if manual {
+            withAnimation(.easeOut(duration: 0.08)) { flash = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { withAnimation { flash = false } }
+        }
         lastThumb = image.resized(maxDimension: 200)
         photoCount += 1
         Task {
-            if let p = try? await Repository.addPhoto(jobId: job.id, orgId: job.orgId, userId: userId, image: image) { onPhoto?(p) }
+            if let p = try? await Repository.addPhoto(jobId: job.id, orgId: job.orgId, userId: userId, image: image,
+                                                     caption: manual ? nil : "Scan frame") { onPhoto?(p) }
         }
     }
 

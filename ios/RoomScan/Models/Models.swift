@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 // MARK: - Enums (mirror Postgres enums)
 
@@ -24,14 +25,27 @@ enum JobStatus: String, Codable, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
-        case .new: "sparkles"
-        case .scheduled: "calendar"
-        case .measured: "ruler"
-        case .designing: "pencil.and.ruler"
-        case .quoted: "doc.text"
-        case .won: "checkmark.seal"
-        case .lost: "xmark.circle"
-        case .archived: "archivebox"
+        case .new: "plus.circle.fill"
+        case .scheduled: "calendar.badge.clock"
+        case .measured: "ruler.fill"
+        case .designing: "pencil.and.ruler.fill"
+        case .quoted: "doc.text.fill"
+        case .won: "checkmark.seal.fill"
+        case .lost: "xmark.seal.fill"
+        case .archived: "archivebox.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .new: .blue
+        case .scheduled: .purple
+        case .measured: .teal
+        case .designing: .orange
+        case .quoted: .indigo
+        case .won: .green
+        case .lost: .red
+        case .archived: .gray
         }
     }
 }

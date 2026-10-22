@@ -13,20 +13,23 @@ struct JobsListView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if let error { Text(error).foregroundStyle(.red).font(.footnote) }
-
-                ForEach(filtered) { job in
-                    NavigationLink(value: job.id) { JobRow(job: job) }
+            ScrollView {
+                LazyVStack(spacing: 12, pinnedViews: []) {
+                    statusChips
+                    if let error { Text(error).foregroundStyle(.red).font(.footnote) }
+                    if filtered.isEmpty && !loading {
+                        ContentUnavailableView(search.isEmpty ? "No jobs yet" : "No matches", systemImage: "list.clipboard",
+                                               description: Text(search.isEmpty ? "Tap + to create your first job." : "Try a different search."))
+                            .padding(.top, 40)
+                    }
+                    ForEach(filtered) { job in
+                        NavigationLink(value: job.id) { JobCard(job: job) }
+                            .buttonStyle(.plain)
+                    }
                 }
+                .padding(.horizontal, 16).padding(.bottom, 32)
             }
-            .listStyle(.plain)
-            .overlay {
-                if jobs.isEmpty && !loading {
-                    ContentUnavailableView("No jobs yet", systemImage: "list.clipboard",
-                                           description: Text("Tap + to create your first job."))
-                }
-            }
+            .background(Color(.systemGroupedBackground))
             .navigationTitle("Jobs")
             .navigationDestination(for: UUID.self) { JobDetailView(jobId: $0) }
             .searchable(text: $search, prompt: "Customer, title or address")
@@ -34,30 +37,58 @@ struct JobsListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { entitlementBadge }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Picker("Status", selection: $filter) {
-                            Text("All").tag(JobStatus?.none)
-                            ForEach(JobStatus.allCases) { Label($0.title, systemImage: $0.systemImage).tag(JobStatus?.some($0)) }
-                        }
-                    } label: { Image(systemName: filter == nil ? "line.3.horizontal.decrease.circle" : "line.3.horizontal.decrease.circle.fill") }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { showNew = true } label: { Image(systemName: "plus") }
+                    Button { showNew = true } label: { Image(systemName: "plus.circle.fill").font(.title3) }
                 }
             }
             .sheet(isPresented: $showNew) {
-                JobEditView(job: nil) { saved in
-                    jobs.insert(saved, at: 0)
-                }
+                JobEditView(job: nil) { saved in jobs.insert(saved, at: 0) }
             }
             .sheet(isPresented: $showPaywall) { PaywallView() }
             .task { await load() }
         }
     }
 
+    // MARK: Filters
+
+    private var counts: [JobStatus: Int] {
+        Dictionary(grouping: jobs, by: { $0.status }).mapValues { $0.count }
+    }
+
+    private var statusChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                chip(title: "All", icon: "square.grid.2x2", count: jobs.count, color: .primary, selected: filter == nil) { filter = nil }
+                ForEach(JobStatus.allCases.filter { $0 != .archived || filter == .archived || (counts[.archived] ?? 0) > 0 }) { s in
+                    chip(title: s.title, icon: s.systemImage, count: counts[s] ?? 0, color: s.color, selected: filter == s) {
+                        filter = (filter == s) ? nil : s
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+
+    private func chip(title: String, icon: String, count: Int, color: Color, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.caption)
+                Text(title).font(.caption.weight(.semibold))
+                if count > 0 {
+                    Text("\(count)").font(.caption2.bold())
+                        .padding(.horizontal, 5).padding(.vertical, 1)
+                        .background((selected ? Color.white.opacity(0.25) : color.opacity(0.15)), in: Capsule())
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            .background(selected ? color : Color(.secondarySystemGroupedBackground), in: Capsule())
+            .foregroundStyle(selected ? Color.white : color)
+        }
+        .buttonStyle(.plain)
+    }
+
     private var filtered: [Job] {
         jobs.filter { job in
-            (filter == nil || job.status == filter) &&
+            (filter == nil ? job.status != .archived : job.status == filter) &&
             (search.isEmpty ||
              job.title.localizedCaseInsensitiveContains(search) ||
              (job.customerName ?? "").localizedCaseInsensitiveContains(search) ||
@@ -71,7 +102,7 @@ struct JobsListView: View {
             if e.subscribed {
                 Label("Pro", systemImage: "checkmark.seal.fill").font(.caption.bold()).foregroundStyle(.green)
             } else {
-                Label("\(e.scansRemaining ?? 0) free scans", systemImage: "cube.transparent")
+                Label("\(e.scansRemaining ?? 0) free", systemImage: "cube.transparent")
                     .font(.caption.bold())
                     .foregroundStyle((e.scansRemaining ?? 0) > 0 ? Color.accentColor : .red)
             }
@@ -81,54 +112,70 @@ struct JobsListView: View {
     private func load() async {
         loading = true; defer { loading = false }
         do {
-            jobs = try await Repository.jobs(includeArchived: filter == .archived)
+            jobs = try await Repository.jobs(includeArchived: true)
             await session.refreshEntitlement()
             error = nil
         } catch { self.error = error.localizedDescription }
     }
 }
 
-struct JobRow: View {
+// MARK: - Card
+
+struct JobCard: View {
     let job: Job
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(job.title).font(.headline)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(job.title).font(.headline).lineLimit(1)
+                    if let c = job.customerName, !c.isEmpty {
+                        Label(c, systemImage: "person").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    }
+                }
                 Spacer()
                 StatusChip(status: job.status)
             }
-            if let c = job.customerName, !c.isEmpty { Text(c).font(.subheadline) }
+
             if !job.addressSummary.isEmpty {
-                Text(job.addressSummary).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                Label(job.addressSummary, systemImage: "mappin.and.ellipse")
+                    .font(.footnote).foregroundStyle(.secondary).lineLimit(1)
             }
-            if let d = job.scheduledAt {
-                Label(d.formatted(date: .abbreviated, time: .shortened), systemImage: "calendar")
-                    .font(.footnote).foregroundStyle(.secondary)
+
+            HStack(spacing: 12) {
+                if let d = job.scheduledAt {
+                    Label(d.formatted(.dateTime.month(.abbreviated).day().hour().minute()), systemImage: "calendar")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(d < Date() ? Color.secondary : Color.purple)
+                }
+                if let e = job.estimateAmount {
+                    Label(e.formatted(.currency(code: job.estimateCurrency).precision(.fractionLength(0))), systemImage: "dollarsign.circle")
+                        .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(job.updatedAt.formatted(.relative(presentation: .named)))
+                    .font(.caption2).foregroundStyle(.tertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(14)
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2).fill(job.status.color).frame(width: 4).padding(.vertical, 12).padding(.leading, 0)
+        }
     }
 }
 
 struct StatusChip: View {
     let status: JobStatus
+    var compact = false
     var body: some View {
-        Label(status.title, systemImage: status.systemImage)
-            .font(.caption.bold())
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(color.opacity(0.15), in: Capsule())
-            .foregroundStyle(color)
-    }
-    private var color: Color {
-        switch status {
-        case .new: .blue
-        case .scheduled: .purple
-        case .measured: .teal
-        case .designing: .orange
-        case .quoted: .indigo
-        case .won: .green
-        case .lost: .red
-        case .archived: .gray
+        HStack(spacing: 4) {
+            Image(systemName: status.systemImage)
+            if !compact { Text(status.title) }
         }
+        .font(.caption.weight(.semibold))
+        .padding(.horizontal, compact ? 6 : 9).padding(.vertical, 5)
+        .background(status.color.opacity(0.14), in: Capsule())
+        .foregroundStyle(status.color)
     }
 }

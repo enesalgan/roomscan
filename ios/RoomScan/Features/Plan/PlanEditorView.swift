@@ -67,7 +67,7 @@ struct PlanEditorView: View {
         origin = CGPoint(x: size.width / 2 - center.x * scale, y: size.height / 2 - center.y * scale)
     }
 
-    private var wallPx: CGFloat { max(plan.wallThickness * scale, 7) }
+    private var wallPx: CGFloat { max(plan.wallThickness * scale, 5) }
 
     // MARK: Gestures
 
@@ -165,7 +165,6 @@ struct PlanEditorView: View {
         for o in plan.objects { drawObject(&ctx, o) }
 
         // Walls — one closed path so corners are mitered cleanly
-        ctx.stroke(outline, with: .color(ink.opacity(0.18)), style: StrokeStyle(lineWidth: wallPx + 6, lineJoin: .miter))   // soft outer edge
         ctx.stroke(outline, with: .color(ink), style: StrokeStyle(lineWidth: wallPx, lineJoin: .miter))
         if case .wall(let i) = selection {
             var p = Path(); p.move(to: toScreen(plan.wallStart(i))); p.addLine(to: toScreen(plan.wallEnd(i)))
@@ -179,7 +178,7 @@ struct PlanEditorView: View {
         for i in 0..<plan.wallCount {
             let c = toScreen(plan.corners[i])
             let sel = selection == .corner(i)
-            let r: CGFloat = sel ? 8 : 5
+            let r: CGFloat = sel ? 7 : 4
             let circle = Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r))
             ctx.fill(circle, with: .color(sel ? dim : .white))
             ctx.stroke(circle, with: .color(sel ? dim : ink), lineWidth: 1.5)
@@ -192,7 +191,7 @@ struct PlanEditorView: View {
             let a = plan.wallStart(i) + n * off, b = plan.wallEnd(i) + n * off
             let sel = selection == .wall(i)
             dimensionLine(&ctx, from: toScreen(a), to: toScreen(b), text: Measure.ftIn(plan.wallLength(i)),
-                          color: sel ? dim : ink.opacity(0.75), emphasized: sel,
+                          color: sel ? dim : .secondary, emphasized: sel,
                           extFrom: toScreen(plan.wallStart(i) + n * Double(wallPx / 2 / scale)),
                           extTo: toScreen(plan.wallEnd(i) + n * Double(wallPx / 2 / scale)))
         }
@@ -235,7 +234,7 @@ struct PlanEditorView: View {
         while x < bb.maxX { lines.move(to: CGPoint(x: x, y: bb.minY)); lines.addLine(to: CGPoint(x: x, y: bb.maxY)); x += step }
         var y = origin.y + ((bb.minY - origin.y) / step).rounded(.down) * step
         while y < bb.maxY { lines.move(to: CGPoint(x: bb.minX, y: y)); lines.addLine(to: CGPoint(x: bb.maxX, y: y)); y += step }
-        g.stroke(lines, with: .color(.orange.opacity(0.16)), lineWidth: 0.5)
+        g.stroke(lines, with: .color(.orange.opacity(0.10)), lineWidth: 0.5)
     }
 
     private func drawOpening(_ ctx: inout GraphicsContext, _ o: PlanOpening) {
@@ -338,11 +337,12 @@ struct PlanEditorView: View {
             p.move(to: .zero); p.addLine(to: CGPoint(x: len, y: 0))
             p.move(to: CGPoint(x: 0, y: -5)); p.addLine(to: CGPoint(x: 0, y: 5))
             p.move(to: CGPoint(x: len, y: -5)); p.addLine(to: CGPoint(x: len, y: 5))
-            l.stroke(p, with: .color(color), lineWidth: emphasized ? 1.5 : 1)
+            l.stroke(p, with: .color(color.opacity(0.8)), lineWidth: emphasized ? 1.2 : 0.8)
         }
         var a2 = angle
         if a2 > .pi / 2 { a2 -= .pi } else if a2 < -.pi / 2 { a2 += .pi }
-        let resolved = ctx.resolve(Text(text).font(emphasized ? .caption.bold() : .caption).foregroundStyle(color))
+        let labelColor: Color = emphasized ? dim : (color == .secondary ? dim.opacity(0.9) : color)
+        let resolved = ctx.resolve(Text(text).font(emphasized ? .caption.bold() : .caption2.weight(.medium)).foregroundStyle(labelColor))
         let size = resolved.measure(in: CGSize(width: 200, height: 40))
         ctx.drawLayer { l in
             l.translateBy(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)

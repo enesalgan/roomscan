@@ -8,6 +8,7 @@ struct JobEditView: View {
     @Environment(\.dismiss) private var dismiss
 
     let original: Job?
+    let scheduledDefault: Date?
     let onSave: (Job) -> Void
 
     @State private var title = ""
@@ -25,8 +26,9 @@ struct JobEditView: View {
     @State private var saving = false
     @State private var error: String?
 
-    init(job: Job?, onSave: @escaping (Job) -> Void) {
+    init(job: Job?, scheduledDefault: Date? = nil, onSave: @escaping (Job) -> Void) {
         self.original = job
+        self.scheduledDefault = scheduledDefault
         self.onSave = onSave
     }
 
@@ -116,7 +118,10 @@ struct JobEditView: View {
     }
 
     private func populate() {
-        guard let j = original else { return }
+        guard let j = original else {
+            if let d = scheduledDefault { hasSchedule = true; scheduledAt = d }
+            return
+        }
         title = j.title; status = j.status
         customerName = j.customerName ?? ""; customerPhone = j.customerPhone ?? ""; customerEmail = j.customerEmail ?? ""
         address = AddressFields(line1: j.addressLine1 ?? "", line2: j.addressLine2 ?? "", city: j.city ?? "",
