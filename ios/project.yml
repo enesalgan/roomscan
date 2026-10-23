@@ -1,5 +1,6 @@
 name: RoomScan
 options:
+  developmentLanguage: en
   bundleIdPrefix: com.lixisoft
   deploymentTarget:
     iOS: "17.0"

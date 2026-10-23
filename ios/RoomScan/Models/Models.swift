@@ -12,14 +12,14 @@ enum JobStatus: String, Codable, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .new: "New"
-        case .scheduled: "Scheduled"
-        case .measured: "Measured"
-        case .designing: "Designing"
-        case .quoted: "Quoted"
-        case .won: "Completed"
-        case .lost: "Lost"
-        case .archived: "Archived"
+        case .new: String(localized: "New")
+        case .scheduled: String(localized: "Scheduled")
+        case .measured: String(localized: "Measured")
+        case .designing: String(localized: "Designing")
+        case .quoted: String(localized: "Quoted")
+        case .won: String(localized: "Completed")
+        case .lost: String(localized: "Lost")
+        case .archived: String(localized: "Archived")
         }
     }
 

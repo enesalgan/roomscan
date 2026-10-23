@@ -52,7 +52,7 @@ struct HomeView: View {
     private var greeting: String {
         let h = Calendar.current.component(.hour, from: Date())
         let who = session.profile?.fullName?.split(separator: " ").first.map(String.init) ?? ""
-        let base = h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"
+        let base = h < 12 ? String(localized: "Good morning") : h < 18 ? String(localized: "Good afternoon") : String(localized: "Good evening")
         return who.isEmpty ? base : "\(base), \(who)"
     }
 
@@ -275,7 +275,7 @@ struct RoomHeroAnimation: View {
         let loop = 9.0
         let p = t.truncatingRemainder(dividingBy: loop) / loop
         let yaw = sin(t * 0.16) * 0.05
-        let S = min(size.width, size.height * 1.2) * 0.268
+        let S = min(size.width * 0.27, size.height * 0.42)
         let cx = size.width / 2, cy = size.height / 2 + 6
         let ink = Color.white
 

@@ -36,7 +36,7 @@ struct AuthView: View {
                 }
 
                 Picker("", selection: $mode) {
-                    ForEach(Mode.allCases, id: \.self) { Text($0.rawValue) }
+                    ForEach(Mode.allCases, id: \.self) { Text(LocalizedStringKey($0.rawValue)) }
                 }
                 .pickerStyle(.segmented)
                 .listRowBackground(Color.clear)
@@ -55,7 +55,7 @@ struct AuthView: View {
                 if mode == .signUp {
                     Section("Account type") {
                         Picker("Account type", selection: $kind) {
-                            ForEach(AccountKind.allCases) { Text($0.rawValue).tag($0) }
+                            ForEach(AccountKind.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                         }
                         .pickerStyle(.inline).labelsHidden()
 
@@ -85,7 +85,7 @@ struct AuthView: View {
                     } label: {
                         HStack {
                             Spacer()
-                            if busy { ProgressView() } else { Text(mode.rawValue).bold() }
+                            if busy { ProgressView() } else { Text(LocalizedStringKey(mode.rawValue)).bold() }
                             Spacer()
                         }
                     }

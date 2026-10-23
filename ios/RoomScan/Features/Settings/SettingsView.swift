@@ -3,6 +3,7 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(SessionStore.self) private var session
     @Environment(StoreService.self) private var store
+    @Environment(AppLanguage.self) private var language
 
     @State private var members: [Profile] = []
     @State private var invites: [OrgInvite] = []
@@ -29,7 +30,14 @@ struct SettingsView: View {
 
                 Section("Organization") {
                     LabeledContent("Name", value: session.organization?.name ?? "—")
-                    LabeledContent("Type", value: session.organization?.type == .company ? "Company / Branch" : "Individual")
+                    LabeledContent("Type", value: String(localized: session.organization?.type == .company ? "Company / Branch" : "Individual"))
+                }
+
+                Section("Language") {
+                    Picker("Language", selection: Binding(get: { language.code }, set: { language.code = $0 })) {
+                        ForEach(AppLanguage.options) { o in Text("\(o.flag)  \(o.name)").tag(o.code) }
+                    }
+                    .pickerStyle(.navigationLink)
                 }
 
                 Section("Plan") {
@@ -81,7 +89,7 @@ struct SettingsView: View {
                 if let error { Text(error).foregroundStyle(.red).font(.footnote) }
 
                 Section {
-                    Button(session.isDemo ? "Exit demo" : "Sign out", role: .destructive) { Task { await session.signOut() } }
+                    Button(session.isDemo ? String(localized: "Exit demo") : String(localized: "Sign out"), role: .destructive) { Task { await session.signOut() } }
                 }
 
                 Section {

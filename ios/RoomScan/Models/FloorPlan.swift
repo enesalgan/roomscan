@@ -21,7 +21,9 @@ struct PlanPoint: Codable, Hashable {
 enum OpeningKind: String, Codable, CaseIterable, Identifiable {
     case door, window, opening
     var id: String { rawValue }
-    var title: String { rawValue.capitalized }
+    var title: String {
+        switch self { case .door: String(localized: "Door"); case .window: String(localized: "Window"); case .opening: String(localized: "Opening") }
+    }
     var systemImage: String {
         switch self { case .door: "door.left.hand.closed"; case .window: "window.vertical.closed"; case .opening: "rectangle.portrait" }
         }

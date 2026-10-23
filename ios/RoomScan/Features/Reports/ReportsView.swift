@@ -22,7 +22,7 @@ struct ReportsView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     Picker("Period", selection: $period) {
-                        ForEach(Period.allCases) { Text($0.rawValue).tag($0) }
+                        ForEach(Period.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                     }
                     .pickerStyle(.segmented)
 

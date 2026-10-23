@@ -49,7 +49,7 @@ struct ScanSessionView: View {
             if controller.phase == .processing || saving {
                 VStack(spacing: 12) {
                     ProgressView().tint(.white)
-                    Text(saving ? "Saving…" : "Building room model…").font(.subheadline.bold()).foregroundStyle(.white)
+                    Text(saving ? String(localized: "Saving…") : String(localized: "Building room model…")).font(.subheadline.bold()).foregroundStyle(.white)
                 }
                 .padding(24).background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 16))
             }
@@ -91,8 +91,8 @@ struct ScanSessionView: View {
     }
 
     private var statusText: String {
-        guard let live = controller.liveRoom, controller.phase == .scanning else { return "Starting…" }
-        return "\(live.walls.count) walls · \(live.doors.count) doors · \(live.windows.count) windows"
+        guard let live = controller.liveRoom, controller.phase == .scanning else { return String(localized: "Starting…") }
+        return String(localized: "\(live.walls.count) walls · \(live.doors.count) doors · \(live.windows.count) windows")
     }
 
     private var bottomBar: some View {

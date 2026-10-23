@@ -133,7 +133,7 @@ struct CalendarView: View {
                     .font(.headline).fontDesign(.rounded)
                 Spacer()
                 let n = jobs(on: selectedDay).count
-                Text(n == 0 ? "Free" : "\(n) appointment\(n == 1 ? "" : "s")").font(.caption).foregroundStyle(.secondary)
+                Text(n == 0 ? String(localized: "Free") : n == 1 ? String(localized: "1 appointment") : String(localized: "\(n) appointments")).font(.caption).foregroundStyle(.secondary)
             }
             let day = jobs(on: selectedDay)
             if day.isEmpty {

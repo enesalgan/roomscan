@@ -96,7 +96,7 @@ struct JobEditView: View {
 
                 if let error { Text(error).foregroundStyle(.red).font(.footnote) }
             }
-            .navigationTitle(original == nil ? "New Job" : "Edit Job")
+            .navigationTitle(original == nil ? String(localized: "New Job") : String(localized: "Edit Job"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

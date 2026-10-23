@@ -32,7 +32,7 @@ struct ScanPreviewView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 Picker("Mode", selection: $mode) {
-                    ForEach(Mode.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(Mode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal).padding(.vertical, 6)
@@ -47,7 +47,7 @@ struct ScanPreviewView: View {
             .onChange(of: scan.name) { _, _ in dirty = true }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(dirty ? "Discard" : "Close") { dismiss() }
+                    Button(dirty ? String(localized: "Discard") : String(localized: "Close")) { dismiss() }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(history.isEmpty)

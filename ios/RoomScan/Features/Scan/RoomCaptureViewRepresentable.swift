@@ -45,14 +45,11 @@ final class RoomCaptureContainerView: UIView {
         captureView.frame = bounds
         if !readyFired, bounds.width > 10, bounds.height > 10, window != nil {
             readyFired = true
-            // one more run-loop turn so the Metal layer picks up the final drawable size
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in self?.onReady?() }
         }
     }
 }
 
-/// Top-level (not nested) because RoomCaptureViewDelegate inherits NSCoding and
-/// Xcode 16 rejects nested NSCoding classes ("unstable name").
 @objc(RoomCaptureCoordinator)
 final class RoomCaptureCoordinator: NSObject, RoomCaptureViewDelegate, RoomCaptureSessionDelegate {
     let controller: ScanController
@@ -61,11 +58,9 @@ final class RoomCaptureCoordinator: NSObject, RoomCaptureViewDelegate, RoomCaptu
         super.init()
     }
 
-    // NSCoding boilerplate (never actually archived)
     func encode(with coder: NSCoder) {}
     required init?(coder: NSCoder) { return nil }
 
-    // Ask RoomPlan to post-process and show the final model when the session ends.
     func captureView(shouldPresent roomDataForProcessing: CapturedRoomData, error: Error?) -> Bool {
         if let error { Task { @MainActor in controller.error = error.localizedDescription } }
         return true
@@ -78,7 +73,6 @@ final class RoomCaptureCoordinator: NSObject, RoomCaptureViewDelegate, RoomCaptu
         }
     }
 
-    // Live session feedback
     func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
         Task { @MainActor in controller.liveRoom = room }
     }
@@ -115,7 +109,7 @@ final class ScanController {
     func stop() {
         guard phase == .scanning else { return }
         phase = .processing
-        captureView?.captureSession.stop()   // → shouldPresent → didPresent
+        captureView?.captureSession.stop()
     }
 
     func cancel() {
@@ -128,7 +122,6 @@ final class ScanController {
         phase = .done
     }
 
-    /// Still photo from the live AR camera feed (portrait-oriented)
     func capturePhoto() -> UIImage? {
         guard let frame = captureView?.captureSession.arSession.currentFrame else { return nil }
         let ci = CIImage(cvPixelBuffer: frame.capturedImage).oriented(.right)
@@ -137,7 +130,6 @@ final class ScanController {
         return UIImage(cgImage: cg)
     }
 
-    /// Snapshot of the rendered model view (used as a thumbnail)
     func snapshot() -> UIImage? {
         guard let v = captureView else { return nil }
         let r = UIGraphicsImageRenderer(bounds: v.bounds)
@@ -146,11 +138,11 @@ final class ScanController {
 
     var instructionText: String? {
         switch instruction {
-        case .moveCloseToWall: "Move closer to the wall"
-        case .moveAwayFromWall: "Move away from the wall"
-        case .slowDown: "Slow down"
-        case .turnOnLight: "Turn on more light"
-        case .lowTexture: "Point at textured surfaces"
+        case .moveCloseToWall: String(localized: "Move closer to the wall")
+        case .moveAwayFromWall: String(localized: "Move away from the wall")
+        case .slowDown: String(localized: "Slow down")
+        case .turnOnLight: String(localized: "Turn on more light")
+        case .lowTexture: String(localized: "Point at textured surfaces")
         case .normal, .none: nil
         @unknown default: nil
         }

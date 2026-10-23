@@ -49,7 +49,7 @@ struct PaywallView: View {
                     } label: {
                         HStack {
                             if store.purchaseInProgress { ProgressView().tint(.white) }
-                            Text(selected.map { "Continue — \($0.displayPrice)" } ?? "Choose a plan").bold()
+                            Text(selected.map { String(localized: "Continue — \($0.displayPrice)") } ?? String(localized: "Choose a plan")).bold()
                         }
                         .frame(maxWidth: .infinity).padding()
                     }
@@ -81,7 +81,7 @@ struct PaywallView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(p.displayName).font(.headline)
-                    Text(isPack ? p.description : (p.subscription?.subscriptionPeriod.unit == .year ? "Billed yearly" : "Billed monthly"))
+                    Text(isPack ? p.description : (p.subscription?.subscriptionPeriod.unit == .year ? String(localized: "Billed yearly") : String(localized: "Billed monthly")))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Spacer()

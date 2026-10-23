@@ -350,7 +350,7 @@ struct PlanEditorView: View {
                 let flip = a > .pi / 2 || a < -.pi / 2
                 l.drawLayer { t in
                     if flip { t.rotate(by: .radians(.pi)) }
-                    t.draw(Text(o.category.capitalized).font(.system(size: 9, weight: .semibold)).foregroundStyle(sel ? dim : .secondary),
+                    t.draw(Text(LocalizedStringKey(o.category.capitalized)).font(.system(size: 9, weight: .semibold)).foregroundStyle(sel ? dim : .secondary),
                            at: CGPoint(x: 0, y: -6), anchor: .center)
                     t.draw(Text("\(Measure.ftIn(o.width)) × \(Measure.ftIn(o.depth))").font(.system(size: 8)).foregroundStyle(.secondary),
                            at: CGPoint(x: 0, y: 6), anchor: .center)

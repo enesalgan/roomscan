@@ -4,12 +4,16 @@ import SwiftUI
 struct RoomScanApp: App {
     @State private var session = SessionStore()
     @State private var store = StoreService()
+    @State private var language = AppLanguage.shared
 
     var body: some Scene {
         WindowGroup {
             RootView()
+                .id(language.code)                       // rebuild the tree when the language changes
+                .environment(\.locale, language.locale)
                 .environment(session)
                 .environment(store)
+                .environment(language)
                 .task { await session.start() }
                 .task { await store.start() }
         }
