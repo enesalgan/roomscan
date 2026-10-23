@@ -245,56 +245,92 @@ struct QuickJobSheet: View {
 }
 
 
-/// Animated LiDAR-style icon: expanding rings, orbiting point cloud and a sweeping scan arc around the cube.
+/// Isometric room being scanned: a laser plane sweeps up and the point cloud assembles into
+/// floor + two walls, then the wireframe edges draw in. Loops every ~5 s.
 struct ScanPulseIcon: View {
+    private struct P3 { var x: Double; var y: Double; var z: Double }
+
+    // deterministic point cloud on floor (y=0), back wall (z=1) and left wall (x=0)
+    private static let cloud: [P3] = {
+        var pts: [P3] = []
+        var seed: UInt64 = 0x9E3779B97F4A7C15
+        func rnd() -> Double { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Double((seed >> 11) & 0xFFFFFF) / Double(0xFFFFFF) }
+        for _ in 0..<110 { pts.append(P3(x: rnd(), y: 0, z: rnd())) }
+        for _ in 0..<90  { pts.append(P3(x: rnd(), y: rnd() * 0.75, z: 1)) }
+        for _ in 0..<90  { pts.append(P3(x: 0, y: rnd() * 0.75, z: rnd())) }
+        return pts
+    }()
+
+    private static let edges: [(P3, P3)] = {
+        let H = 0.75
+        let a = P3(x: 0, y: 0, z: 0), b = P3(x: 1, y: 0, z: 0), c = P3(x: 1, y: 0, z: 1), d = P3(x: 0, y: 0, z: 1)
+        let a2 = P3(x: 0, y: H, z: 0), c2 = P3(x: 1, y: H, z: 1), d2 = P3(x: 0, y: H, z: 1)
+        return [(a, b), (b, c), (c, d), (d, a),            // floor
+                (a, a2), (d, d2), (c, c2),                 // verticals
+                (a2, d2), (d2, c2)]                        // wall tops
+    }()
+
     var body: some View {
         TimelineView(.animation) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
             Canvas { ctx, size in
-                let c = CGPoint(x: size.width / 2, y: size.height / 2)
-                let R = min(size.width, size.height) / 2
                 let accent = Color.accentColor
+                let loop = 5.2
+                let p = (t.truncatingRemainder(dividingBy: loop)) / loop     // 0…1
+                let yaw = 0.62 + sin(t * 0.35) * 0.12                          // gentle rotation
 
-                // expanding rings (3, staggered)
-                for k in 0..<3 {
-                    let phase = (t / 2.4 + Double(k) / 3).truncatingRemainder(dividingBy: 1)
-                    let r = R * (0.35 + 0.65 * phase)
-                    let alpha = (1 - phase) * 0.35
-                    ctx.stroke(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)),
-                               with: .color(accent.opacity(alpha)), lineWidth: 1.2)
+                // isometric projection
+                let S = min(size.width, size.height) * 0.62
+                let cx = size.width / 2, cy = size.height / 2 + S * 0.18
+                func proj(_ q: P3) -> CGPoint {
+                    let x = (q.x - 0.5) * cos(yaw) - (q.z - 0.5) * sin(yaw)
+                    let z = (q.x - 0.5) * sin(yaw) + (q.z - 0.5) * cos(yaw)
+                    return CGPoint(x: cx + x * S, y: cy + z * S * 0.5 - q.y * S * 0.9)
                 }
 
-                // sweeping arc
-                let sweep = (t * 0.9).truncatingRemainder(dividingBy: 2 * .pi)
-                var arc = Path()
-                arc.addArc(center: c, radius: R * 0.78, startAngle: .radians(sweep - 0.9), endAngle: .radians(sweep), clockwise: false)
-                ctx.stroke(arc, with: .linearGradient(Gradient(colors: [accent.opacity(0), accent.opacity(0.9)]),
-                                                      startPoint: CGPoint(x: c.x - R, y: c.y), endPoint: CGPoint(x: c.x + R, y: c.y)),
-                           style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                // timeline: 0–0.68 sweep up, 0.68–0.88 hold, 0.88–1 fade
+                let sweep = min(p / 0.68, 1)
+                let scanY = sweep * 0.75
+                let fade = p > 0.88 ? 1 - (p - 0.88) / 0.12 : 1.0
 
-                // point cloud: 28 dots drifting on orbits
-                var dots = Path()
-                for i in 0..<28 {
-                    let seed = Double(i) * 1.618
-                    let orbit = R * (0.42 + 0.36 * (sin(seed * 3.1) * 0.5 + 0.5))
-                    let speed = 0.25 + (seed.truncatingRemainder(dividingBy: 1)) * 0.35
-                    let a = seed * 2 + t * speed
-                    let wob = sin(t * 1.7 + seed) * 3
-                    let p = CGPoint(x: c.x + cos(a) * (orbit + wob), y: c.y + sin(a) * (orbit + wob))
-                    let dr: CGFloat = 1.2 + CGFloat(sin(t * 2 + seed) * 0.5 + 0.5) * 1.3
-                    dots.addEllipse(in: CGRect(x: p.x - dr, y: p.y - dr, width: 2 * dr, height: 2 * dr))
+                // ghost edges (always, faint)
+                var ghost = Path()
+                for (a, b) in Self.edges { ghost.move(to: proj(a)); ghost.addLine(to: proj(b)) }
+                ctx.stroke(ghost, with: .color(accent.opacity(0.10 * fade)), lineWidth: 1)
+
+                // point cloud below the scan plane
+                var dots = Path(), fresh = Path()
+                for q in Self.cloud where q.y <= scanY {
+                    let s = proj(q)
+                    let age = (scanY - q.y) / 0.08                      // 0 = just revealed
+                    let r: CGFloat = age < 1 ? 2.2 : 1.3
+                    let rect = CGRect(x: s.x - r, y: s.y - r, width: 2 * r, height: 2 * r)
+                    if age < 1 { fresh.addEllipse(in: rect) } else { dots.addEllipse(in: rect) }
                 }
-                ctx.fill(dots, with: .color(accent.opacity(0.7)))
+                ctx.fill(dots, with: .color(accent.opacity(0.55 * fade)))
+                ctx.fill(fresh, with: .color(accent.opacity(0.95 * fade)))
 
-                // core disc
-                let core = R * 0.36
-                ctx.fill(Path(ellipseIn: CGRect(x: c.x - core, y: c.y - core, width: 2 * core, height: 2 * core)), with: .color(accent.opacity(0.14)))
-            }
-            .overlay {
-                Image(systemName: "cube.transparent")
-                    .font(.system(size: 46, weight: .light))
-                    .foregroundStyle(Color.accentColor)
-                    .scaleEffect(1 + 0.04 * sin(t * 2))
+                // edges draw in as the plane passes
+                var solid = Path()
+                for (a, b) in Self.edges {
+                    let lo = min(a.y, b.y), hi = max(a.y, b.y)
+                    guard scanY >= lo else { continue }
+                    let f = hi == lo ? 1 : min((scanY - lo) / (hi - lo), 1)
+                    let (from, to) = a.y <= b.y ? (a, b) : (b, a)
+                    let end = P3(x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f, z: from.z + (to.z - from.z) * f)
+                    solid.move(to: proj(from)); solid.addLine(to: proj(end))
+                }
+                ctx.stroke(solid, with: .color(accent.opacity(0.9 * fade)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+
+                // scan plane (parallelogram at scanY) with bright leading edge
+                if sweep < 1 {
+                    let y = scanY
+                    let quad = [P3(x: 0, y: y, z: 0), P3(x: 1, y: y, z: 0), P3(x: 1, y: y, z: 1), P3(x: 0, y: y, z: 1)].map(proj)
+                    var plane = Path()
+                    plane.move(to: quad[0]); for q in quad.dropFirst() { plane.addLine(to: q) }; plane.closeSubpath()
+                    ctx.fill(plane, with: .color(accent.opacity(0.10)))
+                    ctx.stroke(plane, with: .color(accent.opacity(0.8)), lineWidth: 1)
+                }
             }
         }
     }
