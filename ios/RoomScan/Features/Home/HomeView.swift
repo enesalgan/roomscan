@@ -70,11 +70,8 @@ struct HomeView: View {
     private var bigButton: some View {
         Button { showQuickJob = true } label: {
             VStack(spacing: 14) {
-                ZStack {
-                    Circle().fill(Color.accentColor.opacity(0.15)).frame(width: 128, height: 128)
-                    Circle().stroke(Color.accentColor.opacity(0.35), lineWidth: 1).frame(width: 150, height: 150)
-                    Image(systemName: "cube.transparent").font(.system(size: 52, weight: .light)).foregroundStyle(Color.accentColor)
-                }
+                ScanPulseIcon()
+                    .frame(width: 170, height: 170)
                 Text("New Measurement").font(.title3.weight(.semibold)).fontDesign(.rounded)
                 Text("Name the job, confirm the address, scan the room.")
                     .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -92,7 +89,11 @@ struct HomeView: View {
                 ForEach(recent.prefix(5)) { job in
                     NavigationLink(value: JobRoute(id: job.id, autoScan: false)) {
                         HStack(spacing: 12) {
-                            Image(systemName: job.status.systemImage).frame(width: 28).foregroundStyle(.secondary)
+                            Image(systemName: job.status.systemImage)
+                                .font(.subheadline)
+                                .foregroundStyle(job.status.color)
+                                .frame(width: 34, height: 34)
+                                .background(job.status.color.opacity(0.14), in: RoundedRectangle(cornerRadius: 9))
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(job.title).font(.subheadline.weight(.semibold))
                                 Text(job.addressSummary.isEmpty ? job.updatedAt.formatted(date: .abbreviated, time: .shortened) : job.addressSummary)
@@ -240,5 +241,61 @@ struct QuickJobSheet: View {
             dismiss()
             onCreated(saved)
         } catch { self.error = error.localizedDescription }
+    }
+}
+
+
+/// Animated LiDAR-style icon: expanding rings, orbiting point cloud and a sweeping scan arc around the cube.
+struct ScanPulseIcon: View {
+    var body: some View {
+        TimelineView(.animation) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            Canvas { ctx, size in
+                let c = CGPoint(x: size.width / 2, y: size.height / 2)
+                let R = min(size.width, size.height) / 2
+                let accent = Color.accentColor
+
+                // expanding rings (3, staggered)
+                for k in 0..<3 {
+                    let phase = (t / 2.4 + Double(k) / 3).truncatingRemainder(dividingBy: 1)
+                    let r = R * (0.35 + 0.65 * phase)
+                    let alpha = (1 - phase) * 0.35
+                    ctx.stroke(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: 2 * r, height: 2 * r)),
+                               with: .color(accent.opacity(alpha)), lineWidth: 1.2)
+                }
+
+                // sweeping arc
+                let sweep = (t * 0.9).truncatingRemainder(dividingBy: 2 * .pi)
+                var arc = Path()
+                arc.addArc(center: c, radius: R * 0.78, startAngle: .radians(sweep - 0.9), endAngle: .radians(sweep), clockwise: false)
+                ctx.stroke(arc, with: .linearGradient(Gradient(colors: [accent.opacity(0), accent.opacity(0.9)]),
+                                                      startPoint: CGPoint(x: c.x - R, y: c.y), endPoint: CGPoint(x: c.x + R, y: c.y)),
+                           style: StrokeStyle(lineWidth: 3, lineCap: .round))
+
+                // point cloud: 28 dots drifting on orbits
+                var dots = Path()
+                for i in 0..<28 {
+                    let seed = Double(i) * 1.618
+                    let orbit = R * (0.42 + 0.36 * (sin(seed * 3.1) * 0.5 + 0.5))
+                    let speed = 0.25 + (seed.truncatingRemainder(dividingBy: 1)) * 0.35
+                    let a = seed * 2 + t * speed
+                    let wob = sin(t * 1.7 + seed) * 3
+                    let p = CGPoint(x: c.x + cos(a) * (orbit + wob), y: c.y + sin(a) * (orbit + wob))
+                    let dr: CGFloat = 1.2 + CGFloat(sin(t * 2 + seed) * 0.5 + 0.5) * 1.3
+                    dots.addEllipse(in: CGRect(x: p.x - dr, y: p.y - dr, width: 2 * dr, height: 2 * dr))
+                }
+                ctx.fill(dots, with: .color(accent.opacity(0.7)))
+
+                // core disc
+                let core = R * 0.36
+                ctx.fill(Path(ellipseIn: CGRect(x: c.x - core, y: c.y - core, width: 2 * core, height: 2 * core)), with: .color(accent.opacity(0.14)))
+            }
+            .overlay {
+                Image(systemName: "cube.transparent")
+                    .font(.system(size: 46, weight: .light))
+                    .foregroundStyle(Color.accentColor)
+                    .scaleEffect(1 + 0.04 * sin(t * 2))
+            }
+        }
     }
 }
