@@ -69,15 +69,23 @@ struct HomeView: View {
 
     private var bigButton: some View {
         Button { showQuickJob = true } label: {
-            VStack(spacing: 14) {
-                ScanPulseIcon()
-                    .frame(width: 170, height: 170)
-                Text("New Measurement").font(.title3.weight(.semibold)).fontDesign(.rounded)
-                Text("Name the job, confirm the address, scan the room.")
-                    .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+            ZStack(alignment: .bottom) {
+                LinearGradient(colors: [Color(red: 0.055, green: 0.102, blue: 0.184),
+                                        Color(red: 0.039, green: 0.075, blue: 0.141),
+                                        Color(red: 0.043, green: 0.102, blue: 0.227)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                RoomHeroAnimation()
+                    .padding(.bottom, 64)
+                VStack(spacing: 4) {
+                    Text("New Measurement").font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
+                    Text("Name the job, confirm the address, scan the room.")
+                        .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.55))
+                }
+                .padding(.bottom, 22)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 34)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
+            .frame(height: 300)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: .black.opacity(0.25), radius: 18, y: 10)
         }
         .buttonStyle(.plain)
     }
@@ -245,93 +253,151 @@ struct QuickJobSheet: View {
 }
 
 
-/// Isometric room being scanned: a laser plane sweeps up and the point cloud assembles into
-/// floor + two walls, then the wireframe edges draw in. Loops every ~5 s.
-struct ScanPulseIcon: View {
+/// Hero: an isometric room draws itself as a hairline, a light sweep reveals its surfaces,
+/// then a window, a door and two dimensions appear. 9 s loop, eased, monochrome.
+struct RoomHeroAnimation: View {
     private struct P3 { var x: Double; var y: Double; var z: Double }
-
-    // deterministic point cloud on floor (y=0), back wall (z=1) and left wall (x=0)
-    private static let cloud: [P3] = {
-        var pts: [P3] = []
-        var seed: UInt64 = 0x9E3779B97F4A7C15
-        func rnd() -> Double { seed = seed &* 6364136223846793005 &+ 1442695040888963407; return Double((seed >> 11) & 0xFFFFFF) / Double(0xFFFFFF) }
-        for _ in 0..<110 { pts.append(P3(x: rnd(), y: 0, z: rnd())) }
-        for _ in 0..<90  { pts.append(P3(x: rnd(), y: rnd() * 0.75, z: 1)) }
-        for _ in 0..<90  { pts.append(P3(x: 0, y: rnd() * 0.75, z: rnd())) }
-        return pts
-    }()
-
-    private static let edges: [(P3, P3)] = {
-        let H = 0.75
-        let a = P3(x: 0, y: 0, z: 0), b = P3(x: 1, y: 0, z: 0), c = P3(x: 1, y: 0, z: 1), d = P3(x: 0, y: 0, z: 1)
-        let a2 = P3(x: 0, y: H, z: 0), c2 = P3(x: 1, y: H, z: 1), d2 = P3(x: 0, y: H, z: 1)
-        return [(a, b), (b, c), (c, d), (d, a),            // floor
-                (a, a2), (d, d2), (c, c2),                 // verticals
-                (a2, d2), (d2, c2)]                        // wall tops
-    }()
+    private static let H = 0.62
 
     var body: some View {
-        TimelineView(.animation) { timeline in
+        TimelineView(.animation(minimumInterval: 1.0 / 60)) { timeline in
             let t = timeline.date.timeIntervalSinceReferenceDate
-            Canvas { ctx, size in
-                let accent = Color.accentColor
-                let loop = 5.2
-                let p = (t.truncatingRemainder(dividingBy: loop)) / loop     // 0…1
-                let yaw = 0.62 + sin(t * 0.35) * 0.12                          // gentle rotation
-
-                // isometric projection
-                let S = min(size.width, size.height) * 0.62
-                let cx = size.width / 2, cy = size.height / 2 + S * 0.18
-                func proj(_ q: P3) -> CGPoint {
-                    let x = (q.x - 0.5) * cos(yaw) - (q.z - 0.5) * sin(yaw)
-                    let z = (q.x - 0.5) * sin(yaw) + (q.z - 0.5) * cos(yaw)
-                    return CGPoint(x: cx + x * S, y: cy + z * S * 0.5 - q.y * S * 0.9)
-                }
-
-                // timeline: 0–0.68 sweep up, 0.68–0.88 hold, 0.88–1 fade
-                let sweep = min(p / 0.68, 1)
-                let scanY = sweep * 0.75
-                let fade = p > 0.88 ? 1 - (p - 0.88) / 0.12 : 1.0
-
-                // ghost edges (always, faint)
-                var ghost = Path()
-                for (a, b) in Self.edges { ghost.move(to: proj(a)); ghost.addLine(to: proj(b)) }
-                ctx.stroke(ghost, with: .color(accent.opacity(0.10 * fade)), lineWidth: 1)
-
-                // point cloud below the scan plane
-                var dots = Path(), fresh = Path()
-                for q in Self.cloud where q.y <= scanY {
-                    let s = proj(q)
-                    let age = (scanY - q.y) / 0.08                      // 0 = just revealed
-                    let r: CGFloat = age < 1 ? 2.2 : 1.3
-                    let rect = CGRect(x: s.x - r, y: s.y - r, width: 2 * r, height: 2 * r)
-                    if age < 1 { fresh.addEllipse(in: rect) } else { dots.addEllipse(in: rect) }
-                }
-                ctx.fill(dots, with: .color(accent.opacity(0.55 * fade)))
-                ctx.fill(fresh, with: .color(accent.opacity(0.95 * fade)))
-
-                // edges draw in as the plane passes
-                var solid = Path()
-                for (a, b) in Self.edges {
-                    let lo = min(a.y, b.y), hi = max(a.y, b.y)
-                    guard scanY >= lo else { continue }
-                    let f = hi == lo ? 1 : min((scanY - lo) / (hi - lo), 1)
-                    let (from, to) = a.y <= b.y ? (a, b) : (b, a)
-                    let end = P3(x: from.x + (to.x - from.x) * f, y: from.y + (to.y - from.y) * f, z: from.z + (to.z - from.z) * f)
-                    solid.move(to: proj(from)); solid.addLine(to: proj(end))
-                }
-                ctx.stroke(solid, with: .color(accent.opacity(0.9 * fade)), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
-
-                // scan plane (parallelogram at scanY) with bright leading edge
-                if sweep < 1 {
-                    let y = scanY
-                    let quad = [P3(x: 0, y: y, z: 0), P3(x: 1, y: y, z: 0), P3(x: 1, y: y, z: 1), P3(x: 0, y: y, z: 1)].map(proj)
-                    var plane = Path()
-                    plane.move(to: quad[0]); for q in quad.dropFirst() { plane.addLine(to: q) }; plane.closeSubpath()
-                    ctx.fill(plane, with: .color(accent.opacity(0.10)))
-                    ctx.stroke(plane, with: .color(accent.opacity(0.8)), lineWidth: 1)
-                }
+            Canvas(rendersAsynchronously: true) { ctx, size in
+                draw(&ctx, size: size, t: t)
             }
         }
+    }
+
+    private func ease(_ x: Double) -> Double { x < 0.5 ? 4 * x * x * x : 1 - pow(-2 * x + 2, 3) / 2 }
+    private func clamp(_ v: Double) -> Double { min(max(v, 0), 1) }
+
+    private func draw(_ ctx: inout GraphicsContext, size: CGSize, t: Double) {
+        let loop = 9.0
+        let p = t.truncatingRemainder(dividingBy: loop) / loop
+        let yaw = sin(t * 0.16) * 0.05
+        let S = min(size.width, size.height * 1.2) * 0.268
+        let cx = size.width / 2, cy = size.height / 2 + 6
+        let ink = Color.white
+
+        func proj(_ q: P3) -> CGPoint {
+            let x0 = q.x - 0.5, z0 = q.z - 0.5
+            let x = x0 * cos(yaw) - z0 * sin(yaw), z = x0 * sin(yaw) + z0 * cos(yaw)
+            return CGPoint(x: cx + (x - z) * 0.866 * S, y: cy + (x + z) * 0.5 * S - q.y * S)
+        }
+        let H = Self.H
+        let A = proj(P3(x: 0, y: 0, z: 0)), B = proj(P3(x: 1, y: 0, z: 0)), C = proj(P3(x: 1, y: 0, z: 1)), D = proj(P3(x: 0, y: 0, z: 1))
+        let A2 = proj(P3(x: 0, y: H, z: 0)), C2 = proj(P3(x: 1, y: H, z: 1)), D2 = proj(P3(x: 0, y: H, z: 1))
+        let seq: [[CGPoint]] = [[A, B, C, D, A, A2, D2, C2, C], [D, D2]]
+
+        let draw1 = ease(clamp(p / 0.2))
+        let fade = p > 0.93 ? 1 - (p - 0.93) / 0.07 : 1.0
+
+        // faint full outline
+        ctx.stroke(polyline(seq, fraction: 1), with: .color(ink.opacity(0.10 * fade)), lineWidth: 0.8)
+
+        // light sweep across the three faces
+        let sw = clamp((p - 0.22) / 0.42), se = ease(sw)
+        let all = [A, B, C, D, A2, C2, D2]
+        let minX = all.map(\.x).min()!, maxX = all.map(\.x).max()!
+        let sx = minX + (maxX - minX + 60) * se - 30
+        let faces: [[CGPoint]] = [[A, B, C, D], [A, A2, D2, D], [D, D2, C2, C]]
+        for (i, f) in faces.enumerated() {
+            var face = Path(); face.move(to: f[0]); for q in f.dropFirst() { face.addLine(to: q) }; face.closeSubpath()
+            var l = ctx
+            l.clip(to: face)
+            let strong = i == 0 ? 0.09 : 0.06, mid = i == 0 ? 0.05 : 0.035
+            let band = CGRect(x: minX - 80, y: 0, width: sx - (minX - 80), height: size.height)
+            l.fill(Path(band), with: .linearGradient(
+                Gradient(stops: [.init(color: ink.opacity(0), location: 0), .init(color: ink.opacity(mid), location: 0.75), .init(color: ink.opacity(strong), location: 1)]),
+                startPoint: CGPoint(x: sx - 70, y: 0), endPoint: CGPoint(x: sx, y: 0)))
+            let washed = CGRect(x: minX - 80, y: 0, width: max(0, sx - 70 - (minX - 80)), height: size.height)
+            l.fill(Path(washed), with: .color(ink.opacity((i == 0 ? 0.05 : 0.03) * fade)))
+        }
+
+        // scan line
+        if sw > 0 && sw < 1 {
+            let y0 = all.map(\.y).min()! - 6, y1 = all.map(\.y).max()! + 6
+            var line = Path(); line.move(to: CGPoint(x: sx, y: y0)); line.addLine(to: CGPoint(x: sx, y: y1))
+            ctx.stroke(line, with: .color(ink.opacity(0.06)), lineWidth: 10)
+            ctx.stroke(line, with: .linearGradient(
+                Gradient(stops: [.init(color: ink.opacity(0), location: 0), .init(color: ink.opacity(0.7), location: 0.5), .init(color: ink.opacity(0), location: 1)]),
+                startPoint: CGPoint(x: sx, y: y0), endPoint: CGPoint(x: sx, y: y1)), lineWidth: 1)
+        }
+
+        // outline drawing itself
+        ctx.stroke(polyline(seq, fraction: draw1), with: .color(ink.opacity(0.85 * fade)), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+
+        // details: window, door, dimensions
+        let det = ease(clamp((p - 0.58) / 0.14))
+        guard det > 0 else { return }
+        let a = det * fade
+
+        var win = Path()
+        let w = [P3(x: 0.32, y: 0.24, z: 1), P3(x: 0.7, y: 0.24, z: 1), P3(x: 0.7, y: 0.5, z: 1), P3(x: 0.32, y: 0.5, z: 1)].map(proj)
+        win.move(to: w[0]); for q in w.dropFirst() { win.addLine(to: q) }; win.closeSubpath()
+        win.move(to: proj(P3(x: 0.51, y: 0.24, z: 1))); win.addLine(to: proj(P3(x: 0.51, y: 0.5, z: 1)))
+        let door = [P3(x: 0, y: 0, z: 0.55), P3(x: 0, y: 0.5, z: 0.55), P3(x: 0, y: 0.5, z: 0.85), P3(x: 0, y: 0, z: 0.85)].map(proj)
+        win.move(to: door[0]); for q in door.dropFirst() { win.addLine(to: q) }
+        ctx.stroke(win, with: .color(ink.opacity(0.6 * a)), lineWidth: 0.9)
+
+        var arc = Path()
+        for k in 0...14 {
+            let ang = Double(k) / 14 * .pi / 2
+            let pt = proj(P3(x: 0.3 * sin(ang), y: 0, z: 0.55 + 0.3 * (1 - cos(ang))))
+            if k == 0 { arc.move(to: pt) } else { arc.addLine(to: pt) }
+        }
+        ctx.stroke(arc, with: .color(ink.opacity(0.35 * a)), style: StrokeStyle(lineWidth: 0.8, dash: [2, 2]))
+
+        // width dimension along the front edge (B→C)
+        let off = 14.0
+        let n = CGPoint(x: C.y - B.y, y: -(C.x - B.x))
+        let L = hypot(n.x, n.y)
+        let nx = n.x / L * off, ny = n.y / L * off
+        let b1 = CGPoint(x: B.x - nx, y: B.y - ny), c1 = CGPoint(x: C.x - nx, y: C.y - ny)
+        var dim = Path()
+        dim.move(to: b1); dim.addLine(to: c1)
+        dim.move(to: CGPoint(x: B.x - nx * 0.3, y: B.y - ny * 0.3)); dim.addLine(to: CGPoint(x: b1.x - nx * 0.25, y: b1.y - ny * 0.25))
+        dim.move(to: CGPoint(x: C.x - nx * 0.3, y: C.y - ny * 0.3)); dim.addLine(to: CGPoint(x: c1.x - nx * 0.25, y: c1.y - ny * 0.25))
+        // height dimension on the left edge (A→A2)
+        let h1 = CGPoint(x: A.x - 16, y: A.y), h2 = CGPoint(x: A2.x - 16, y: A2.y)
+        dim.move(to: h1); dim.addLine(to: h2)
+        dim.move(to: CGPoint(x: h1.x - 3, y: h1.y)); dim.addLine(to: CGPoint(x: h1.x + 3, y: h1.y))
+        dim.move(to: CGPoint(x: h2.x - 3, y: h2.y)); dim.addLine(to: CGPoint(x: h2.x + 3, y: h2.y))
+        ctx.stroke(dim, with: .color(ink.opacity(0.45 * a)), lineWidth: 0.8)
+
+        let font = Font.system(size: 10.5, weight: .semibold)
+        let mid = CGPoint(x: (b1.x + c1.x) / 2 - nx * 0.9, y: (b1.y + c1.y) / 2 - ny * 0.9)
+        var angle = atan2(C.y - B.y, C.x - B.x)
+        if angle > .pi / 2 { angle -= .pi } else if angle < -.pi / 2 { angle += .pi }
+        ctx.drawLayer { l in
+            l.translateBy(x: mid.x, y: mid.y); l.rotate(by: .radians(angle))
+            l.draw(Text("14' 6\"").font(font).foregroundStyle(ink.opacity(0.85 * a)), at: .zero, anchor: .center)
+        }
+        ctx.drawLayer { l in
+            l.translateBy(x: h1.x - 9, y: (h1.y + h2.y) / 2); l.rotate(by: .radians(-.pi / 2))
+            l.draw(Text("8' 11\"").font(font).foregroundStyle(ink.opacity(0.85 * a)), at: .zero, anchor: .center)
+        }
+    }
+
+    /// Polyline sequences drawn up to a fraction of their total length ("draws itself").
+    private func polyline(_ seqs: [[CGPoint]], fraction: Double) -> Path {
+        var segs: [(CGPoint, CGPoint, Double)] = []
+        var total = 0.0
+        for seq in seqs {
+            for i in 1..<seq.count {
+                let l = hypot(seq[i].x - seq[i - 1].x, seq[i].y - seq[i - 1].y)
+                segs.append((seq[i - 1], seq[i], l)); total += l
+            }
+        }
+        var budget = fraction * total
+        var path = Path()
+        for (a, b, l) in segs {
+            if budget <= 0 { break }
+            let f = min(1, budget / l)
+            path.move(to: a)
+            path.addLine(to: CGPoint(x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f))
+            budget -= l
+        }
+        return path
     }
 }
