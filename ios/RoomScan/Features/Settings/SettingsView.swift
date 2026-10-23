@@ -22,15 +22,10 @@ struct SettingsView: View {
                         }
                     }
                 }
-                Section("Account") {
-                    LabeledContent("Name", value: session.profile?.displayName ?? "—")
-                    LabeledContent("Email", value: session.profile?.email ?? "—")
-                    LabeledContent("Role", value: session.profile?.role.rawValue.capitalized ?? "—")
-                }
-
-                Section("Organization") {
-                    LabeledContent("Name", value: session.organization?.name ?? "—")
-                    LabeledContent("Type", value: String(localized: session.organization?.type == .company ? "Company / Branch" : "Individual"))
+                Section {
+                    profileCard
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                 }
 
                 Section("Language") {
@@ -104,6 +99,69 @@ struct SettingsView: View {
                 NewInviteSheet { inv in invites.insert(inv, at: 0) }
             }
         }
+    }
+
+    // MARK: Profile header
+
+    private var initials: String {
+        let parts = (session.profile?.fullName ?? session.profile?.email ?? "?").split(separator: " ")
+        let letters = parts.prefix(2).compactMap { $0.first }.map(String.init).joined()
+        return letters.isEmpty ? "?" : letters.uppercased()
+    }
+
+    private var profileCard: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().fill(LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.65)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    Text(initials).font(.title3.weight(.bold)).foregroundStyle(.white)
+                }
+                .frame(width: 56, height: 56)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(session.profile?.displayName ?? "—").font(.headline)
+                    Text(session.profile?.email ?? "").font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
+                    HStack(spacing: 6) {
+                        roleBadge
+                        if session.entitlement.subscribed {
+                            Label("Pro", systemImage: "checkmark.seal.fill").font(.caption2.weight(.semibold))
+                                .padding(.horizontal, 7).padding(.vertical, 3)
+                                .background(Color.green.opacity(0.14), in: Capsule()).foregroundStyle(.green)
+                        }
+                    }
+                }
+                Spacer()
+            }
+            .padding(16)
+
+            Divider().padding(.leading, 16)
+
+            HStack(spacing: 12) {
+                Image(systemName: session.organization?.type == .company ? "building.2.fill" : "person.fill")
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 32, height: 32)
+                    .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 9))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(session.organization?.name ?? "—").font(.subheadline.weight(.semibold))
+                    Text(String(localized: session.organization?.type == .company ? "Company / Branch" : "Individual"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if session.profile?.isAdmin == true {
+                    Text("\(members.count)").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Image(systemName: "person.2").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+        }
+        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+    }
+
+    private var roleBadge: some View {
+        let role = session.profile?.role ?? .member
+        let title: String = switch role { case .owner: String(localized: "Owner"); case .admin: String(localized: "Admin"); case .member: String(localized: "Member") }
+        return Text(title).font(.caption2.weight(.semibold))
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Color.accentColor.opacity(0.12), in: Capsule()).foregroundStyle(Color.accentColor)
     }
 
     private func load() async {

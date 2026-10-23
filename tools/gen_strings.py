@@ -213,6 +213,10 @@ T = {
 "Toilet": ("Inodoro","Tuvalet","शौचालय","Vaso sanitário","Унитаз"),
 "Bathtub": ("Bañera","Küvet","बाथटब","Banheira","Ванна"),
 "Fireplace": ("Chimenea","Şömine","फ़ायरप्लेस","Lareira","Камин"),
+"Add more details": ("Añadir más detalles","Daha fazla detay ekle","अधिक विवरण जोड़ें","Adicionar mais detalhes","Добавить детали"),
+"Owner": ("Propietario","Sahip","मालिक","Proprietário","Владелец"),
+"Check your email to confirm your account, then sign in.": ("Revisa tu correo para confirmar la cuenta y luego inicia sesión.","Hesabını onaylamak için e-postanı kontrol et, sonra giriş yap.","खाता पुष्टि के लिए ईमेल देखें, फिर साइन इन करें।","Verifique seu e-mail para confirmar a conta e depois entre.","Подтвердите аккаунт по почте, затем войдите."),
+"Password reset email sent.": ("Correo de restablecimiento enviado.","Şifre sıfırlama e-postası gönderildi.","पासवर्ड रीसेट ईमेल भेजा गया।","E-mail de redefinição enviado.","Письмо для сброса пароля отправлено."),
 "Stairs": ("Escaleras","Merdiven","सीढ़ियाँ","Escadas","Лестница"),
 }
 

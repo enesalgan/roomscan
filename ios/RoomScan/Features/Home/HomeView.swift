@@ -183,10 +183,10 @@ struct QuickJobSheet: View {
                         Button { Task { await locate() } } label: { Label("Use my location", systemImage: "location") }
                     }
                     .font(.subheadline)
-                } header: { Text("Address") }
+                }
 
                 Section {
-                    DisclosureGroup("More details", isExpanded: $showMore) {
+                    DisclosureGroup("Add more details", isExpanded: $showMore) {
                         TextField("Customer name", text: $customerName).textContentType(.name)
                         TextField("Phone", text: $customerPhone).keyboardType(.phonePad)
                         TextField("Email", text: $customerEmail).keyboardType(.emailAddress).textInputAutocapitalization(.never)
