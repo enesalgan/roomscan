@@ -51,7 +51,9 @@ struct PhotosSection: View {
             CameraView { image in Task { await upload([image]) } }
                 .ignoresSafeArea()
         }
-        .sheet(item: $selected) { PhotoViewer(photo: $0) }
+        .sheet(item: $selected) { p in
+            PhotoViewer(photo: p) { Task { await delete(p) } }
+        }
         .onChange(of: pickerItems) { _, items in
             guard !items.isEmpty else { return }
             Task {
@@ -101,7 +103,9 @@ struct PhotoCell: View {
 struct PhotoViewer: View {
     @Environment(\.dismiss) private var dismiss
     let photo: Photo
+    var onDelete: () -> Void = {}
     @State private var url: URL?
+    @State private var confirm = false
     var body: some View {
         NavigationStack {
             ZStack {
@@ -110,7 +114,15 @@ struct PhotoViewer: View {
                     img.resizable().scaledToFit()
                 } placeholder: { ProgressView().tint(.white) }
             }
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Close") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(role: .destructive) { confirm = true } label: { Image(systemName: "trash") }
+                }
+            }
+            .confirmationDialog("Delete this photo?", isPresented: $confirm, titleVisibility: .visible) {
+                Button("Delete", role: .destructive) { onDelete(); dismiss() }
+            }
             .task { url = try? await Repository.signedURL(bucket: "photos", path: photo.storagePath) }
         }
     }

@@ -21,6 +21,7 @@ struct PlanEditorView: View {
     @State private var origin: CGPoint = .zero      // screen position of plan (0,0)
     @State private var didFit = false
     @State private var drag: DragTarget?
+    @State private var pinchOrigin: CGPoint?        // origin at pinch start
 
     private enum DragTarget { case corner(Int), opening(UUID), object(UUID, PlanPoint), pan(CGPoint) }
 
@@ -36,8 +37,17 @@ struct PlanEditorView: View {
                 .gesture(dragGesture)
                 .simultaneousGesture(
                     MagnifyGesture()
-                        .onChanged { v in scale = min(max(baseScale * v.magnification, 15), 400) }
-                        .onEnded { _ in baseScale = scale }
+                        .onChanged { v in
+                            if pinchOrigin == nil { pinchOrigin = origin; drag = nil }
+                            let newScale = min(max(baseScale * v.magnification, 15), 400)
+                            // keep the plan point under the fingers fixed
+                            let anchor = v.startLocation
+                            let k = newScale / baseScale
+                            let o = pinchOrigin ?? origin
+                            origin = CGPoint(x: anchor.x - (anchor.x - o.x) * k, y: anchor.y - (anchor.y - o.y) * k)
+                            scale = newScale
+                        }
+                        .onEnded { _ in baseScale = scale; pinchOrigin = nil }
                 )
                 .onTapGesture { loc in selection = hitTest(loc) }
                 .onAppear { if !didFit { fit(in: geo.size); didFit = true } }
@@ -74,6 +84,7 @@ struct PlanEditorView: View {
     private var dragGesture: some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .local)
             .onChanged { v in
+                if pinchOrigin != nil { return }      // two-finger zoom in progress
                 if drag == nil {
                     switch hitTest(v.startLocation) {
                     case .corner(let i): drag = .corner(i); onBeginEdit()

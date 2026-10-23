@@ -17,7 +17,7 @@ enum JobStatus: String, Codable, CaseIterable, Identifiable {
         case .measured: "Measured"
         case .designing: "Designing"
         case .quoted: "Quoted"
-        case .won: "Won"
+        case .won: "Completed"
         case .lost: "Lost"
         case .archived: "Archived"
         }
@@ -35,6 +35,9 @@ enum JobStatus: String, Codable, CaseIterable, Identifiable {
         case .archived: "archivebox.fill"
         }
     }
+
+    /// Completed / lost / archived — no further work expected
+    var isClosed: Bool { self == .won || self == .lost || self == .archived }
 
     var color: Color {
         switch self {

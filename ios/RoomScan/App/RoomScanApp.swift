@@ -43,6 +43,8 @@ struct MainTabView: View {
                 .tabItem { Label("Jobs", systemImage: "list.clipboard") }
             CalendarView()
                 .tabItem { Label("Calendar", systemImage: "calendar") }
+            ReportsView()
+                .tabItem { Label("Reports", systemImage: "chart.bar.xaxis") }
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
         }

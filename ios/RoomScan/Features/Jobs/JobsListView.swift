@@ -25,12 +25,14 @@ struct JobsListView: View {
                     ForEach(filtered) { job in
                         NavigationLink(value: job.id) { JobCard(job: job) }
                             .buttonStyle(.plain)
+                            .opacity(filter == nil && job.status.isClosed ? 0.55 : 1)
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 32)
             }
             .background(Color(.systemGroupedBackground))
             .navigationTitle("Jobs")
+            .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: UUID.self) { JobDetailView(jobId: $0) }
             .searchable(text: $search, prompt: "Customer, title or address")
             .refreshable { await load() }
@@ -87,12 +89,18 @@ struct JobsListView: View {
     }
 
     private var filtered: [Job] {
-        jobs.filter { job in
+        let list = jobs.filter { job in
             (filter == nil ? job.status != .archived : job.status == filter) &&
             (search.isEmpty ||
              job.title.localizedCaseInsensitiveContains(search) ||
              (job.customerName ?? "").localizedCaseInsensitiveContains(search) ||
              job.addressSummary.localizedCaseInsensitiveContains(search))
+        }
+        // active work first, completed/lost at the bottom
+        guard filter == nil else { return list }
+        return list.sorted { a, b in
+            if a.status.isClosed != b.status.isClosed { return !a.status.isClosed }
+            return a.updatedAt > b.updatedAt
         }
     }
 

@@ -114,6 +114,13 @@ enum Repository {
         return dest
     }
 
+    /// Total scans in the organization (reports)
+    static func scanCount() async throws -> Int {
+        if await DemoStore.isActive { return await DemoStore.shared.scans.count }
+        let res = try await supabase.from("scans").select("id", head: true, count: .exact).execute()
+        return res.count ?? 0
+    }
+
     /// Raw CapturedRoom JSON for a scan (used to build the editable floor plan)
     static func scanJSON(for scan: Scan) async throws -> Data {
         guard let path = scan.jsonPath else { throw AppError.message("Scan has no plan data") }
