@@ -15,7 +15,8 @@ struct JobDetailView: View {
     @State private var photos: [Photo] = []
     @State private var error: String?
     @State private var showEdit = false
-    @State private var showScanner = false
+    @State private var scanRequest: ScanRequest?
+    private struct ScanRequest: Identifiable { let id = UUID(); let roomName: String? }
     @State private var showPaywall = false
     @State private var scanToPreview: Scan?
     @State private var confirmDelete = false
@@ -75,12 +76,11 @@ struct JobDetailView: View {
                 }
                 .sheet(isPresented: $showRoomPicker) {
                     RoomTypeSheet(existing: scans.map(\.name)) { name in
-                        pendingRoomName = name
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { showScanner = true }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { scanRequest = ScanRequest(roomName: name) }
                     }
                 }
-                .fullScreenCover(isPresented: $showScanner) {
-                    ScanSessionView(job: job, existingScans: scans.count, roomName: pendingRoomName, onSaved: { saved in
+                .fullScreenCover(item: $scanRequest) { req in
+                    ScanSessionView(job: job, existingScans: scans.count, roomName: req.roomName, onSaved: { saved in
                         scans.insert(saved, at: 0)
                         if job.status == .new || job.status == .scheduled { self.job?.status = .measured }
                         Task {
@@ -90,7 +90,6 @@ struct JobDetailView: View {
                         // open the 2D plan right away
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { scanToPreview = saved }
                     }, onPhoto: { p in photos.append(p) })
-                    .onDisappear { pendingRoomName = nil }
                 }
                 .sheet(isPresented: $showPaywall) { PaywallView() }
                 .fullScreenCover(isPresented: $showFloorMap) {
@@ -246,7 +245,12 @@ struct JobDetailView: View {
     private func startScan() {
         guard RoomCaptureSession.isSupported else { error = AppError.lidarUnsupported.localizedDescription; return }
         guard session.entitlement.canScan else { showPaywall = true; return }
-        if pendingRoomName == nil { showRoomPicker = true } else { showScanner = true }
+        if let name = pendingRoomName {          // room already chosen on the Home sheet
+            pendingRoomName = nil
+            scanRequest = ScanRequest(roomName: name)
+        } else {
+            showRoomPicker = true
+        }
     }
 
     // MARK: Share
