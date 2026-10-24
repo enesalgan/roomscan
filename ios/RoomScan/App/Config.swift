@@ -1,12 +1,17 @@
 import Foundation
 
 enum Config {
+    /// Built from the project ref (xcconfig can't hold "//" reliably). Falls back to SUPABASE_URL if set.
     static var supabaseURL: URL {
-        guard let s = Bundle.main.object(forInfoDictionaryKey: "SUPABASE_URL") as? String,
-              let url = URL(string: s), s.hasPrefix("https://") else {
-            fatalError("SUPABASE_URL is not set. Edit Config/Secrets.xcconfig")
+        let info = Bundle.main.infoDictionary ?? [:]
+        if let ref = (info["SUPABASE_PROJECT_REF"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !ref.isEmpty, !ref.contains("$"), let url = URL(string: "https://\(ref).supabase.co") {
+            return url
         }
-        return url
+        if let s = info["SUPABASE_URL"] as? String, s.hasPrefix("https://"), !s.contains("$"), let url = URL(string: s) {
+            return url
+        }
+        fatalError("SUPABASE_PROJECT_REF is not set. Edit Config/Secrets.xcconfig")
     }
 
     static var supabaseAnonKey: String {

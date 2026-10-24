@@ -54,7 +54,7 @@ targets:
         NSLocationWhenInUseUsageDescription: Used to fill in the job address from your current location.
         UIRequiredDeviceCapabilities: [arkit]
         ITSAppUsesNonExemptEncryption: false
-        SUPABASE_URL: $(SUPABASE_URL)
+        SUPABASE_PROJECT_REF: $(SUPABASE_PROJECT_REF)
         SUPABASE_ANON_KEY: $(SUPABASE_ANON_KEY)
     configFiles:
       Debug: Config/Secrets.xcconfig
