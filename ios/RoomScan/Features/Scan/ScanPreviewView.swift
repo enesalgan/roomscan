@@ -234,6 +234,10 @@ private struct WallPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text("Wall \(wall + 1)").font(.headline)
+                if plan.isInferred(wall) {
+                    Text("not scanned").font(.caption.weight(.semibold)).foregroundStyle(.orange)
+                        .padding(.horizontal, 7).padding(.vertical, 3).background(Color.orange.opacity(0.14), in: Capsule())
+                }
                 Spacer()
                 MeasureField(title: "Length", meters: plan.wallLength(wall)) { m in onEdit { $0.setWallLength(wall, m) } }
             }

@@ -5,8 +5,9 @@ struct HomeView: View {
     @Environment(SessionStore.self) private var session
 
     @State private var recent: [Job] = []
-    @State private var showQuickJob = false
-    @State private var startJob: Job?        // job created from the quick sheet → push detail with scanner auto-started
+    @State private var starting = false
+    @State private var showPaywall = false
+    @State private var startError: String?
     @State private var path = NavigationPath()
 
     var body: some View {
@@ -25,13 +26,10 @@ struct HomeView: View {
             .navigationDestination(for: JobRoute.self) { route in
                 JobDetailView(jobId: route.id, autoStartScan: route.autoScan)
             }
-            .sheet(isPresented: $showQuickJob) {
-                QuickJobSheet { job in
-                    recent.insert(job, at: 0)
-                    path.append(JobRoute(id: job.id, autoScan: true))
-                }
-                .presentationDetents([.large])
-            }
+            .alert("Couldn't start", isPresented: Binding(get: { startError != nil }, set: { if !$0 { startError = nil } })) {
+                Button("OK") {}
+            } message: { Text(startError ?? "") }
+            .sheet(isPresented: $showPaywall) { PaywallView() }
             .task { await load() }
             .refreshable { await load() }
         }
@@ -68,7 +66,7 @@ struct HomeView: View {
     }
 
     private var bigButton: some View {
-        Button { showQuickJob = true } label: {
+        Button { Task { await startMeasurement() } } label: {
             ZStack(alignment: .bottom) {
                 LinearGradient(colors: [Color(red: 0.055, green: 0.102, blue: 0.184),
                                         Color(red: 0.039, green: 0.075, blue: 0.141),
@@ -77,8 +75,11 @@ struct HomeView: View {
                 RoomHeroAnimation()
                     .padding(.bottom, 64)
                 VStack(spacing: 4) {
-                    Text("New Measurement").font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
-                    Text("Name the job, confirm the address, scan the room.")
+                    HStack(spacing: 8) {
+                        if starting { ProgressView().tint(.white) }
+                        Text(starting ? "Starting…" : "New Measurement").font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
+                    }
+                    Text("Tap to scan. Address and name are filled in for you.")
                         .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.55))
                 }
                 .padding(.bottom, 22)
@@ -123,135 +124,41 @@ struct HomeView: View {
         recent = (try? await Repository.jobs()) ?? []
         await session.refreshEntitlement()
     }
+
+    /// One tap: locate (max 2.5 s) → create the job named after the address → open it with the scanner running.
+    private func startMeasurement() async {
+        guard !starting, let userId = session.userId, let orgId = session.profile?.orgId else { return }
+        guard session.entitlement.canScan else { showPaywall = true; return }
+        starting = true; defer { starting = false }
+
+        let address: AddressFields? = await withTaskGroup(of: AddressFields?.self) { group in
+            group.addTask { try? await LocationService.shared.currentAddress() }
+            group.addTask { try? await Task.sleep(for: .seconds(2.5)); return nil }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
+
+        var job = Job(orgId: orgId, createdBy: userId, title: "")
+        if let a = address {
+            job.addressLine1 = a.line1.nilIfEmpty; job.addressLine2 = a.line2.nilIfEmpty
+            job.city = a.city.nilIfEmpty; job.state = a.state.nilIfEmpty; job.postalCode = a.postalCode.nilIfEmpty
+            job.country = a.country.nilIfEmpty ?? "US"; job.latitude = a.latitude; job.longitude = a.longitude
+        }
+        let addrTitle = [address?.line1, address?.city].compactMap { $0?.nilIfEmpty }.first
+        job.title = addrTitle ?? String(localized: "Measurement \(Date().formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
+        do {
+            let saved = try await Repository.upsert(job)
+            recent.insert(saved, at: 0)
+            path.append(JobRoute(id: saved.id, autoScan: true))
+        } catch { startError = error.localizedDescription }
+    }
 }
 
 struct JobRoute: Hashable {
     let id: UUID
     let autoScan: Bool
 }
-
-/// Minimal "new job" sheet: name + address (auto from location) → Start scanning.
-struct QuickJobSheet: View {
-    @Environment(SessionStore.self) private var session
-    @Environment(\.dismiss) private var dismiss
-    let onCreated: (Job) -> Void
-
-    @State private var title = ""
-    @State private var address = AddressFields()
-    @State private var locating = true
-    @State private var showAddressSearch = false
-    @State private var showMore = false
-    @State private var customerName = ""
-    @State private var customerPhone = ""
-    @State private var customerEmail = ""
-    @State private var hasSchedule = false
-    @State private var scheduledAt = Date()
-    @State private var notes = ""
-    @State private var saving = false
-    @State private var error: String?
-    @FocusState private var titleFocused: Bool
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section {
-                    TextField("Job name (e.g. Smith kitchen)", text: $title)
-                        .font(.title3.weight(.semibold))
-                        .focused($titleFocused)
-                        .submitLabel(.done)
-                }
-
-                Section {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "location.fill").foregroundStyle(Color.accentColor).padding(.top, 2)
-                        VStack(alignment: .leading, spacing: 3) {
-                            if locating {
-                                HStack(spacing: 8) { ProgressView(); Text("Finding your location…").foregroundStyle(.secondary) }
-                            } else if address.line1.isEmpty && address.city.isEmpty {
-                                Text("No address yet").foregroundStyle(.secondary)
-                            } else {
-                                Text(address.line1).font(.body.weight(.medium))
-                                Text([address.city, address.state, address.postalCode].filter { !$0.isEmpty }.joined(separator: " "))
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                            }
-                        }
-                        Spacer()
-                    }
-                    HStack {
-                        Button { showAddressSearch = true } label: { Label("Change", systemImage: "magnifyingglass") }
-                        Spacer()
-                        Button { Task { await locate() } } label: { Label("Use my location", systemImage: "location") }
-                    }
-                    .font(.subheadline)
-                }
-
-                Section {
-                    DisclosureGroup("Add more details", isExpanded: $showMore) {
-                        TextField("Customer name", text: $customerName).textContentType(.name)
-                        TextField("Phone", text: $customerPhone).keyboardType(.phonePad)
-                        TextField("Email", text: $customerEmail).keyboardType(.emailAddress).textInputAutocapitalization(.never)
-                        Toggle("Appointment", isOn: $hasSchedule)
-                        if hasSchedule { DatePicker("When", selection: $scheduledAt) }
-                        TextField("Notes", text: $notes, axis: .vertical).lineLimit(2...4)
-                    }
-                }
-
-                if let error { Text(error).foregroundStyle(.red).font(.footnote) }
-
-                Section {
-                    Button { Task { await create() } } label: {
-                        HStack {
-                            Spacer()
-                            if saving { ProgressView() } else { Label("Start scanning", systemImage: "cube.transparent").font(.headline) }
-                            Spacer()
-                        }
-                        .padding(.vertical, 6)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .listRowBackground(Color.clear)
-                    .listRowInsets(EdgeInsets())
-                    .disabled(saving || title.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-            }
-            .navigationTitle("New Measurement")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
-            .sheet(isPresented: $showAddressSearch) { AddressSearchView { address = $0 } }
-            .task { titleFocused = true; await locate() }
-        }
-    }
-
-    private func locate() async {
-        locating = true; defer { locating = false }
-        if let a = try? await LocationService.shared.currentAddress() { address = a }
-    }
-
-    private func create() async {
-        guard let userId = session.userId, let orgId = session.profile?.orgId else { error = "Not signed in"; return }
-        saving = true; defer { saving = false }
-        var job = Job(orgId: orgId, createdBy: userId, title: title.trimmingCharacters(in: .whitespaces))
-        job.addressLine1 = address.line1.nilIfEmpty
-        job.addressLine2 = address.line2.nilIfEmpty
-        job.city = address.city.nilIfEmpty
-        job.state = address.state.nilIfEmpty
-        job.postalCode = address.postalCode.nilIfEmpty
-        job.country = address.country.nilIfEmpty ?? "US"
-        job.latitude = address.latitude
-        job.longitude = address.longitude
-        job.customerName = customerName.nilIfEmpty
-        job.customerPhone = customerPhone.nilIfEmpty
-        job.customerEmail = customerEmail.nilIfEmpty
-        job.notes = notes.nilIfEmpty
-        job.scheduledAt = hasSchedule ? scheduledAt : nil
-        if hasSchedule { job.status = .scheduled }
-        do {
-            let saved = try await Repository.upsert(job)
-            dismiss()
-            onCreated(saved)
-        } catch { self.error = error.localizedDescription }
-    }
-}
-
 
 /// Hero: an isometric room draws itself as a hairline, a light sweep reveals its surfaces,
 /// then a window, a door and two dimensions appear. 9 s loop, eased, monochrome.

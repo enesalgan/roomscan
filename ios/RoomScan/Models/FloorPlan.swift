@@ -66,6 +66,10 @@ struct FloorPlan: Codable, Hashable {
     var wallThickness: Double = 0.12
     var openings: [PlanOpening] = []
     var objects: [PlanObject] = []
+    /// Wall indices that were not scanned (outline closed by inference). Drawn dashed.
+    var inferredWalls: [Int] = []
+
+    func isInferred(_ wall: Int) -> Bool { inferredWalls.contains(wall) }
 
     // MARK: Walls
 
@@ -260,8 +264,9 @@ extension FloorPlan {
         // Remember where openings are in space before walls move
         let openingAnchors: [(PlanOpening, PlanPoint)] = openings.map { ($0, rot(point(onWall: $0.wall, at: $0.offset))) }
 
-        // 2) Merge consecutive collinear walls (angle diff < 6°)
+        // 2) Merge consecutive collinear walls (angle diff < 6°); flags[i] = wall i (corner i → i+1) is inferred
         var pts = p.corners
+        var flags = (0..<pts.count).map { inferredWalls.contains($0) }
         var changed = true
         while changed && pts.count > 3 {
             changed = false
@@ -270,7 +275,10 @@ extension FloorPlan {
                 let d1 = (b - a).normalized, d2 = (c - b).normalized
                 let ang = acos(min(max(d1.dot(d2), -1), 1)) * 180 / .pi
                 if ang < 6 || (b - a).length < 0.05 || (c - b).length < 0.05 {
-                    pts.remove(at: i); changed = true; break
+                    // walls (i-1) and i merge into one wall starting at corner i-1
+                    let prev = (i - 1 + pts.count) % pts.count
+                    flags[prev] = flags[prev] && flags[i]
+                    pts.remove(at: i); flags.remove(at: i); changed = true; break
                 }
             }
         }
@@ -304,10 +312,11 @@ extension FloorPlan {
             }
         }
         p.corners = newCorners
+        p.inferredWalls = flags.indices.filter { flags[$0] }
 
         // 4) Re-attach openings to the nearest new wall
         p.openings = openingAnchors.compactMap { (o, anchor) in
-            guard let hit = p.nearestWall(to: anchor), hit.distance < 0.8 else { return nil }
+            guard let hit = p.nearestWall(to: anchor), hit.distance < 0.8, !p.isInferred(hit.wall) else { return nil }
             var o2 = o; o2.wall = hit.wall; o2.offset = hit.t
             return o2
         }

@@ -36,7 +36,7 @@ struct WallElevationView: View {
                     if let id = hit(loc, t: t) { selection = PlanSelection.opening(id) } else { selection = PlanSelection.wall(wall) }
                 }
                 .overlay(alignment: .top) {
-                    Text("Wall \(wall + 1) of \(plan.wallCount)")
+                    Text(plan.isInferred(wall) ? "Wall \(wall + 1) of \(plan.wallCount) · not scanned" : "Wall \(wall + 1) of \(plan.wallCount)")
                         .font(.caption.bold()).padding(.horizontal, 10).padding(.vertical, 5)
                         .background(.regularMaterial, in: Capsule()).padding(.top, 8)
                 }

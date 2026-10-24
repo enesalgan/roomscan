@@ -175,11 +175,22 @@ struct PlanEditorView: View {
         // Objects
         for o in plan.objects { drawObject(&ctx, o) }
 
-        // Walls — one closed path so corners are mitered cleanly
-        ctx.stroke(outline, with: .color(ink), style: StrokeStyle(lineWidth: wallPx, lineJoin: .miter))
+        // Walls — scanned walls as one mitered path; inferred (unscanned) walls dashed and thin
+        if plan.inferredWalls.isEmpty {
+            ctx.stroke(outline, with: .color(ink), style: StrokeStyle(lineWidth: wallPx, lineJoin: .miter))
+        } else {
+            var solid = Path(), dashed = Path()
+            for i in 0..<plan.wallCount {
+                let a = toScreen(plan.wallStart(i)), b = toScreen(plan.wallEnd(i))
+                if plan.isInferred(i) { dashed.move(to: a); dashed.addLine(to: b) }
+                else { solid.move(to: a); solid.addLine(to: b) }
+            }
+            ctx.stroke(solid, with: .color(ink), style: StrokeStyle(lineWidth: wallPx, lineCap: .square))
+            ctx.stroke(dashed, with: .color(ink.opacity(0.45)), style: StrokeStyle(lineWidth: max(wallPx * 0.45, 2), lineCap: .butt, dash: [8, 6]))
+        }
         if case .wall(let i) = selection {
             var p = Path(); p.move(to: toScreen(plan.wallStart(i))); p.addLine(to: toScreen(plan.wallEnd(i)))
-            ctx.stroke(p, with: .color(dim), style: StrokeStyle(lineWidth: wallPx, lineCap: .butt))
+            ctx.stroke(p, with: .color(dim), style: StrokeStyle(lineWidth: plan.isInferred(i) ? max(wallPx * 0.45, 2) : wallPx, lineCap: .butt))
         }
 
         // Openings
@@ -195,10 +206,11 @@ struct PlanEditorView: View {
             ctx.stroke(circle, with: .color(sel ? dim : ink), lineWidth: 1.5)
         }
 
-        // Wall dimension lines (outside the room)
+        // Wall dimension lines (outside the room; openings sit closer to the wall, walls further out)
         for i in 0..<plan.wallCount {
             let n = plan.outwardNormal(i)
-            let off = Double((wallPx / 2 + 26) / scale)
+            let hasOpenings = !plan.openings(on: i).isEmpty
+            let off = Double((wallPx / 2 + (hasOpenings ? 46 : 24)) / scale)
             let a = plan.wallStart(i) + n * off, b = plan.wallEnd(i) + n * off
             let sel = selection == .wall(i)
             dimensionLine(&ctx, from: toScreen(a), to: toScreen(b), text: Measure.ftIn(plan.wallLength(i)),
@@ -209,7 +221,7 @@ struct PlanEditorView: View {
 
         // Overall size (top + left) — only when no single wall already shows that length
         let b = plan.bounds
-        let offAll = Double((wallPx / 2 + 62) / scale)
+        let offAll = Double((wallPx / 2 + 80) / scale)
         let hasWall = { (len: Double, horizontal: Bool) -> Bool in
             (0..<plan.wallCount).contains { i in
                 let d = plan.wallDirection(i)
@@ -310,8 +322,8 @@ struct PlanEditorView: View {
 
     private func drawOpeningDims(_ ctx: inout GraphicsContext, _ o: PlanOpening, emphasized: Bool) {
         let i = o.wall
-        let n = plan.inwardNormal(i)
-        let off = Double((wallPx / 2 + 18) / scale)
+        let n = plan.outwardNormal(i)
+        let off = Double((wallPx / 2 + 20) / scale)
         func pt(_ t: Double) -> CGPoint { toScreen(plan.point(onWall: i, at: t) + n * off) }
         func ext(_ t: Double) -> CGPoint { toScreen(plan.point(onWall: i, at: t) + n * Double(wallPx / 2 / scale)) }
         dimensionLine(&ctx, from: pt(o.left), to: pt(o.right), text: Measure.ftIn(o.width), color: emphasized ? dim : .secondary,

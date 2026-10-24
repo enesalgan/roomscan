@@ -44,6 +44,10 @@ struct Plan3DView: UIViewRepresentable {
         let edgeMat = SCNMaterial()
         edgeMat.diffuse.contents = UIColor(white: 0.25, alpha: 1)
         edgeMat.isDoubleSided = true
+        let glassMat = SCNMaterial()
+        glassMat.diffuse.contents = UIColor.systemBlue.withAlphaComponent(0.10)
+        glassMat.isDoubleSided = true
+        glassMat.transparencyMode = .dualLayer
 
         // Floor
         let floorPath = UIBezierPath()
@@ -71,7 +75,7 @@ struct Plan3DView: UIViewRepresentable {
             }
             path.usesEvenOddFillRule = true
             let shape = SCNShape(path: path, extrusionDepth: plan.wallThickness)
-            shape.materials = [wallMat, edgeMat, wallMat]   // front, back, side (SCNShape: front/back/extruded sides)
+            shape.materials = plan.isInferred(i) ? [glassMat, glassMat, glassMat] : [wallMat, edgeMat, wallMat]
             let node = SCNNode(geometry: shape)
             let s = plan.wallStart(i), d = plan.wallDirection(i)
             node.position = SCNVector3(Float(s.x), 0, Float(s.y))

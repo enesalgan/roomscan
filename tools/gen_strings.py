@@ -217,6 +217,11 @@ T = {
 "Owner": ("Propietario","Sahip","मालिक","Proprietário","Владелец"),
 "Check your email to confirm your account, then sign in.": ("Revisa tu correo para confirmar la cuenta y luego inicia sesión.","Hesabını onaylamak için e-postanı kontrol et, sonra giriş yap.","खाता पुष्टि के लिए ईमेल देखें, फिर साइन इन करें।","Verifique seu e-mail para confirmar a conta e depois entre.","Подтвердите аккаунт по почте, затем войдите."),
 "Password reset email sent.": ("Correo de restablecimiento enviado.","Şifre sıfırlama e-postası gönderildi.","पासवर्ड रीसेट ईमेल भेजा गया।","E-mail de redefinição enviado.","Письмо для сброса пароля отправлено."),
+"Tap to scan. Address and name are filled in for you.": ("Toca para escanear. La dirección y el nombre se completan solos.","Dokun ve tara. Adres ve isim otomatik dolar.","स्कैन के लिए टैप करें। पता और नाम अपने आप भर जाते हैं।","Toque para escanear. Endereço e nome são preenchidos automaticamente.","Нажмите, чтобы сканировать. Адрес и название заполнятся сами."),
+"Couldn't start": ("No se pudo iniciar","Başlatılamadı","शुरू नहीं हो सका","Não foi possível iniciar","Не удалось начать"),
+"Measurement %@": ("Medición %@","Ölçüm %@","माप %@","Medição %@","Измерение %@"),
+"not scanned": ("sin escanear","taranmadı","स्कैन नहीं हुआ","não escaneada","не отсканирована"),
+"Wall %lld of %lld · not scanned": ("Pared %lld de %lld · sin escanear","Duvar %lld / %lld · taranmadı","दीवार %lld / %lld · स्कैन नहीं हुई","Parede %lld de %lld · não escaneada","Стена %lld из %lld · не отсканирована"),
 "Stairs": ("Escaleras","Merdiven","सीढ़ियाँ","Escadas","Лестница"),
 }
 
