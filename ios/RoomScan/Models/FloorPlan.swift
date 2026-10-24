@@ -226,6 +226,49 @@ struct FloorPlan: Codable, Hashable {
         return o
     }
 
+    /// Removes a corner (merges walls i-1 and i). Openings on the merged walls stay by position; later walls shift down.
+    mutating func removeCorner(_ i: Int) {
+        guard wallCount > 3 else { return }
+        let prev = (i - 1 + wallCount) % wallCount
+        // remember opening world positions on the two affected walls
+        var moved: [(Int, PlanPoint)] = []     // (index in openings, world centre)
+        for k in openings.indices where openings[k].wall == prev || openings[k].wall == i {
+            moved.append((k, point(onWall: openings[k].wall, at: openings[k].offset)))
+        }
+        corners.remove(at: i)
+        inferredWalls = inferredWalls.filter { $0 != i }.map { $0 > i ? $0 - 1 : $0 }
+        for k in openings.indices where openings[k].wall > i { openings[k].wall -= 1 }
+        let merged = prev >= wallCount ? wallCount - 1 : prev
+        for (k, world) in moved {
+            openings[k].wall = merged
+            openings[k].offset = (world - wallStart(merged)).dot(wallDirection(merged))
+        }
+        clampOpenings(on: merged)
+    }
+
+    /// Rotates the whole plan 90° clockwise on screen about its centre (walls, openings, objects, measurements follow)
+    mutating func rotate90() {
+        let b = bounds
+        let c = PlanPoint(x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2)
+        func r(_ p: PlanPoint) -> PlanPoint { PlanPoint(x: c.x - (p.y - c.y), y: c.y + (p.x - c.x)) }
+        corners = corners.map(r)
+        for k in objects.indices { objects[k].center = r(objects[k].center); objects[k].rotation += .pi / 2 }
+        for k in measurements.indices { measurements[k].a = r(measurements[k].a); measurements[k].b = r(measurements[k].b) }
+    }
+
+    /// Adds a generic box object in the middle of the room (user renames/resizes it)
+    @discardableResult
+    mutating func addObject(_ category: String, width: Double = 0.6, depth: Double = 0.6, height: Double = 0.9) -> PlanObject {
+        let b = bounds
+        var o = PlanObject(category: category, center: PlanPoint(x: (b.min.x + b.max.x) / 2, y: (b.min.y + b.max.y) / 2),
+                           width: width, depth: depth, height: height, rotation: 0)
+        // nudge if something already sits there
+        var tries = 0
+        while objects.contains(where: { $0.center.distance(to: o.center) < 0.3 }) && tries < 8 { o.center.x += 0.35; tries += 1 }
+        objects.append(o)
+        return o
+    }
+
     /// Nearest wall to a point: (wall index, distance along wall from its start)
     func nearestWall(to p: PlanPoint) -> (wall: Int, t: Double, distance: Double)? {
         guard wallCount >= 2 else { return nil }

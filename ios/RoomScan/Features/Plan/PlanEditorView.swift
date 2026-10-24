@@ -8,6 +8,15 @@ enum PlanSelection: Hashable {
     case measurement(UUID)
 }
 
+/// A dimension the user can tap to edit
+enum DimensionTarget: Hashable {
+    case wall(Int)
+    case openingWidth(UUID)
+    case openingLeft(UUID)      // gap from wall start
+    case openingRight(UUID)     // gap to wall end
+    case objectSide(UUID, String)
+}
+
 /// Top-down editable floor plan: pan/zoom, drag corners, drag openings along walls, drag objects,
 /// tap to select; dimension lines on every wall, overall size, object sizes.
 struct PlanEditorView: View {
@@ -17,7 +26,18 @@ struct PlanEditorView: View {
     var onEndEdit: () -> Void
     var refitToken: Int = 0                         // bump to re-fit the view (e.g. after "Square up")
     @Binding var measureMode: Bool                  // tap two points to add a dimension
+    var onDimensionTap: (DimensionTarget, Double) -> Void = { _, _ in }
     @State private var measureStart: PlanPoint?
+
+    private struct DimItem {
+        var a: CGPoint, b: CGPoint
+        var text: String
+        var color: Color
+        var emphasized: Bool
+        var extFrom: CGPoint? = nil, extTo: CGPoint? = nil
+        var target: DimensionTarget? = nil
+        var meters: Double = 0
+    }
 
     @State private var scale: CGFloat = 60          // points per meter
     @State private var baseScale: CGFloat = 60
@@ -53,7 +73,18 @@ struct PlanEditorView: View {
                         .onEnded { _ in baseScale = scale; pinchOrigin = nil }
                 )
                 .onTapGesture { loc in
-                    if measureMode { measureTap(loc) } else { selection = hitTest(loc) }
+                    if measureMode { measureTap(loc); return }
+                    if let d = dimensionHit(loc), let t = d.target {
+                        // tapping a dimension: select what it belongs to, then open the editor
+                        switch t {
+                        case .wall(let i): selection = .wall(i)
+                        case .openingWidth(let id), .openingLeft(let id), .openingRight(let id): selection = .opening(id)
+                        case .objectSide(let id, _): selection = .object(id)
+                        }
+                        onDimensionTap(t, d.meters)
+                        return
+                    }
+                    withAnimation(.easeOut(duration: 0.15)) { selection = hitTest(loc) }
                 }
                 .onChange(of: measureMode) { _, on in if !on { measureStart = nil } }
                 .overlay(alignment: .top) {
@@ -168,6 +199,20 @@ struct PlanEditorView: View {
 
     // MARK: Hit testing
 
+    /// Dimension label under the finger (label sits at the segment midpoint)
+    private func dimensionHit(_ s: CGPoint) -> DimItem? {
+        for d in dimensions() where d.target != nil {
+            let mid = CGPoint(x: (d.a.x + d.b.x) / 2, y: (d.a.y + d.b.y) / 2)
+            let len = hypot(d.b.x - d.a.x, d.b.y - d.a.y)
+            guard len > 1 else { continue }
+            let ux = (d.b.x - d.a.x) / len, uy = (d.b.y - d.a.y) / len
+            let dx = s.x - mid.x, dy = s.y - mid.y
+            let along = abs(dx * ux + dy * uy), across = abs(-dx * uy + dy * ux)
+            if along < 34 && across < 12 { return d }
+        }
+        return nil
+    }
+
     private func hitTest(_ s: CGPoint) -> PlanSelection? {
         for m in plan.measurements where distance(s, toScreen(m.a), toScreen(m.b)) < 12 { return .measurement(m.id) }
         for i in 0..<plan.wallCount {
@@ -253,42 +298,9 @@ struct PlanEditorView: View {
             ctx.stroke(circle, with: .color(sel ? dim : ink), lineWidth: 1.5)
         }
 
-        // Wall dimension lines (outside the room; openings sit closer to the wall, walls further out)
-        for i in 0..<plan.wallCount {
-            let n = plan.outwardNormal(i)
-            let hasOpenings = !plan.openings(on: i).isEmpty
-            let off = Double((wallPx / 2 + (hasOpenings ? 46 : 24)) / scale)
-            let a = plan.wallStart(i) + n * off, b = plan.wallEnd(i) + n * off
-            let sel = selection == .wall(i)
-            dimensionLine(&ctx, from: toScreen(a), to: toScreen(b), text: Measure.ftIn(plan.wallLength(i)),
-                          color: sel ? dim : .secondary, emphasized: sel,
-                          extFrom: toScreen(plan.wallStart(i) + n * Double(wallPx / 2 / scale)),
-                          extTo: toScreen(plan.wallEnd(i) + n * Double(wallPx / 2 / scale)))
-        }
-
-        // Overall size (top + left) — only when no single wall already shows that length
-        let b = plan.bounds
-        let offAll = Double((wallPx / 2 + 80) / scale)
-        let hasWall = { (len: Double, horizontal: Bool) -> Bool in
-            (0..<plan.wallCount).contains { i in
-                let d = plan.wallDirection(i)
-                let isH = abs(d.x) > abs(d.y)
-                return isH == horizontal && abs(plan.wallLength(i) - len) < 0.02
-            }
-        }
-        if !hasWall(plan.width, true) {
-            dimensionLine(&ctx, from: toScreen(PlanPoint(x: b.min.x, y: b.min.y - offAll)), to: toScreen(PlanPoint(x: b.max.x, y: b.min.y - offAll)),
-                          text: Measure.ftIn(plan.width), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
-        }
-        if !hasWall(plan.depth, false) {
-            dimensionLine(&ctx, from: toScreen(PlanPoint(x: b.min.x - offAll, y: b.max.y)), to: toScreen(PlanPoint(x: b.min.x - offAll, y: b.min.y)),
-                          text: Measure.ftIn(plan.depth), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
-        }
-
-        // Opening dimensions (always visible; emphasized when selected)
-        for o in plan.openings {
-            let emphasized = selection == .opening(o.id) || selection == .wall(o.wall)
-            drawOpeningDims(&ctx, o, emphasized: emphasized)
+        // Dimensions (walls, openings, overall, object distances) — same list is used for tap hit-testing
+        for d in dimensions() {
+            dimensionLine(&ctx, from: d.a, to: d.b, text: d.text, color: d.color, emphasized: d.emphasized, extFrom: d.extFrom, extTo: d.extTo)
         }
 
         // User measurements
@@ -299,15 +311,6 @@ struct PlanEditorView: View {
             for p in [m.a, m.b] {
                 let c = toScreen(p)
                 ctx.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(sel ? dim : .purple))
-            }
-        }
-
-        // Selected object → distances to the walls on each side
-        if case .object(let id) = selection, let o = plan.objects.first(where: { $0.id == id }) {
-            for side in plan.objectSides(o) {
-                guard let hit = plan.rayToWall(from: side.point, direction: side.dir), hit.distance > 0.02 else { continue }
-                dimensionLine(&ctx, from: toScreen(side.point), to: toScreen(hit.hit), text: Measure.ftIn(hit.distance),
-                              color: dim, emphasized: false, extFrom: nil, extTo: nil)
             }
         }
 
@@ -439,29 +442,94 @@ struct PlanEditorView: View {
         }
     }
 
-    private func drawOpeningDims(_ ctx: inout GraphicsContext, _ o: PlanOpening, emphasized: Bool) {
-        let i = o.wall
-        let n = plan.outwardNormal(i)
-        let off = Double((wallPx / 2 + 20) / scale)
-        func pt(_ t: Double) -> CGPoint { toScreen(plan.point(onWall: i, at: t) + n * off) }
-        func ext(_ t: Double) -> CGPoint { toScreen(plan.point(onWall: i, at: t) + n * Double(wallPx / 2 / scale)) }
-        dimensionLine(&ctx, from: pt(o.left), to: pt(o.right), text: Measure.ftIn(o.width), color: emphasized ? dim : .secondary,
-                      emphasized: emphasized, extFrom: ext(o.left), extTo: ext(o.right))
-        // distance to the nearest wall end on each side (skip if another opening sits in between)
-        let others = plan.openings(on: i).filter { $0.id != o.id }
-        let leftBlocked = others.contains { $0.right <= o.left + 0.01 }
-        let rightBlocked = others.contains { $0.left >= o.right - 0.01 }
-        if o.left > 0.03, !leftBlocked {
-            dimensionLine(&ctx, from: pt(0), to: pt(o.left), text: Measure.ftIn(o.left), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
+    /// Which wall the current selection "belongs" to (its chain of gap dimensions is shown)
+    private var focusWall: Int? {
+        switch selection {
+        case .wall(let i): return i
+        case .opening(let id): return plan.openings.first { $0.id == id }?.wall
+        default: return nil
         }
-        let rightGap = plan.wallLength(i) - o.right
-        if rightGap > 0.03, !rightBlocked {
-            dimensionLine(&ctx, from: pt(o.right), to: pt(plan.wallLength(i)), text: Measure.ftIn(rightGap), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
+    }
+
+    /// All dimension lines for the current state.
+    /// Nothing selected → clean view: wall lengths + opening widths only.
+    /// Wall / opening selected → that wall's full chain (gaps to corners and neighbours) + overall size.
+    /// Object selected → its distances to the walls.
+    private func dimensions() -> [DimItem] {
+        var items: [DimItem] = []
+        let detailed = selection != nil
+        let halfWall = Double(wallPx / 2 / scale)
+
+        // Walls
+        for i in 0..<plan.wallCount {
+            let n = plan.outwardNormal(i)
+            let hasOpenings = !plan.openings(on: i).isEmpty
+            let off = halfWall + Double((hasOpenings ? 46 : 24) / scale)
+            let sel = selection == .wall(i)
+            items.append(DimItem(a: toScreen(plan.wallStart(i) + n * off), b: toScreen(plan.wallEnd(i) + n * off),
+                                 text: Measure.ftIn(plan.wallLength(i)), color: sel ? dim : .secondary, emphasized: sel,
+                                 extFrom: toScreen(plan.wallStart(i) + n * halfWall), extTo: toScreen(plan.wallEnd(i) + n * halfWall),
+                                 target: .wall(i), meters: plan.wallLength(i)))
         }
-        // gaps between neighbouring openings
-        if let next = others.filter({ $0.left >= o.right - 0.01 }).min(by: { $0.left < $1.left }), next.left - o.right > 0.03 {
-            dimensionLine(&ctx, from: pt(o.right), to: pt(next.left), text: Measure.ftIn(next.left - o.right), color: .secondary, emphasized: false, extFrom: nil, extTo: nil)
+
+        // Openings
+        for o in plan.openings {
+            let i = o.wall
+            let n = plan.outwardNormal(i)
+            let off = halfWall + Double(20 / scale)
+            func pt(_ t: Double) -> CGPoint { toScreen(plan.point(onWall: i, at: t) + n * off) }
+            func ext(_ t: Double) -> CGPoint { toScreen(plan.point(onWall: i, at: t) + n * halfWall) }
+            let emphasized = selection == .opening(o.id) || selection == .wall(i)
+            items.append(DimItem(a: pt(o.left), b: pt(o.right), text: Measure.ftIn(o.width), color: emphasized ? dim : .secondary,
+                                 emphasized: emphasized, extFrom: ext(o.left), extTo: ext(o.right), target: .openingWidth(o.id), meters: o.width))
+            guard detailed, focusWall == i else { continue }
+            // distance to the nearest wall end on each side (skip if another opening sits in between)
+            let others = plan.openings(on: i).filter { $0.id != o.id }
+            let leftBlocked = others.contains { $0.right <= o.left + 0.01 }
+            let rightBlocked = others.contains { $0.left >= o.right - 0.01 }
+            if o.left > 0.03, !leftBlocked {
+                items.append(DimItem(a: pt(0), b: pt(o.left), text: Measure.ftIn(o.left), color: .secondary, emphasized: false,
+                                     target: .openingLeft(o.id), meters: o.left))
+            }
+            let rightGap = plan.wallLength(i) - o.right
+            if rightGap > 0.03, !rightBlocked {
+                items.append(DimItem(a: pt(o.right), b: pt(plan.wallLength(i)), text: Measure.ftIn(rightGap), color: .secondary, emphasized: false,
+                                     target: .openingRight(o.id), meters: rightGap))
+            }
+            if let next = others.filter({ $0.left >= o.right - 0.01 }).min(by: { $0.left < $1.left }), next.left - o.right > 0.03 {
+                items.append(DimItem(a: pt(o.right), b: pt(next.left), text: Measure.ftIn(next.left - o.right), color: .secondary, emphasized: false))
+            }
         }
+
+        // Overall size (top + left) — only in detailed mode and when no single wall already shows that length
+        if detailed {
+            let b = plan.bounds
+            let offAll = halfWall + Double(80 / scale)
+            let hasWall = { (len: Double, horizontal: Bool) -> Bool in
+                (0..<plan.wallCount).contains { i in
+                    let d = plan.wallDirection(i)
+                    return (abs(d.x) > abs(d.y)) == horizontal && abs(plan.wallLength(i) - len) < 0.02
+                }
+            }
+            if !hasWall(plan.width, true) {
+                items.append(DimItem(a: toScreen(PlanPoint(x: b.min.x, y: b.min.y - offAll)), b: toScreen(PlanPoint(x: b.max.x, y: b.min.y - offAll)),
+                                     text: Measure.ftIn(plan.width), color: .secondary, emphasized: false))
+            }
+            if !hasWall(plan.depth, false) {
+                items.append(DimItem(a: toScreen(PlanPoint(x: b.min.x - offAll, y: b.max.y)), b: toScreen(PlanPoint(x: b.min.x - offAll, y: b.min.y)),
+                                     text: Measure.ftIn(plan.depth), color: .secondary, emphasized: false))
+            }
+        }
+
+        // Selected object → distances to the walls on each side
+        if case .object(let id) = selection, let o = plan.objects.first(where: { $0.id == id }) {
+            for side in plan.objectSides(o) {
+                guard let hit = plan.rayToWall(from: side.point, direction: side.dir), hit.distance > 0.02 else { continue }
+                items.append(DimItem(a: toScreen(side.point), b: toScreen(hit.hit), text: Measure.ftIn(hit.distance), color: dim, emphasized: false,
+                                     target: .objectSide(id, side.side), meters: hit.distance))
+            }
+        }
+        return items
     }
 
     private func drawObject(_ ctx: inout GraphicsContext, _ o: PlanObject) {

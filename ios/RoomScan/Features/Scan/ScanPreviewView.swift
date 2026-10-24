@@ -29,20 +29,32 @@ struct ScanPreviewView: View {
     @State private var refitToken = 0
     @State private var measureMode = false
     @State private var showStylePicker = false
+    @State private var dimEdit: DimEdit?
+
+    private struct DimEdit: Identifiable {
+        let id = UUID()
+        let target: DimensionTarget
+        let meters: Double
+        let title: String
+    }
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                Picker("Mode", selection: $mode) {
-                    ForEach(Mode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+            ZStack(alignment: .bottom) {
+                VStack(spacing: 0) {
+                    Picker("Mode", selection: $mode) {
+                        ForEach(Mode.allCases) { Text(LocalizedStringKey($0.rawValue)).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal).padding(.vertical, 6)
+
+                    content
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
-                .pickerStyle(.segmented)
-                .padding(.horizontal).padding(.vertical, 6)
-
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-
                 bottomPanel
+            }
+            .sheet(item: $dimEdit) { d in
+                MeasurementSheet(title: d.title, meters: d.meters) { m in apply(d.target, m) }
             }
             .navigationTitle($scan.name)
             .navigationBarTitleDisplayMode(.inline)
@@ -89,9 +101,13 @@ struct ScanPreviewView: View {
         } else {
             switch mode {
             case .plan:
-                PlanEditorView(plan: planBinding, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true }, refitToken: refitToken, measureMode: $measureMode)
+                PlanEditorView(plan: planBinding, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true },
+                               refitToken: refitToken, measureMode: $measureMode,
+                               onDimensionTap: { t, m in dimEdit = DimEdit(target: t, meters: m, title: dimTitle(t)) })
+                    .padding(.bottom, panelInset)
             case .walls:
                 WallElevationView(plan: planBinding, wall: $wallIndex, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true })
+                    .padding(.bottom, panelInset)
             case .model:
                 if let plan { Plan3DView(plan: plan) }
             case .mesh:
@@ -107,20 +123,30 @@ struct ScanPreviewView: View {
 
     // MARK: Bottom panel
 
+    /// Space reserved under the plan so the floating panel never covers it
+    private var panelInset: CGFloat {
+        switch selection {
+        case nil: return 150
+        case .corner, .measurement: return 90
+        default: return 180
+        }
+    }
+
     @ViewBuilder private var bottomPanel: some View {
         if let plan, mode == .plan || mode == .walls {
-            VStack(spacing: 0) {
-                Divider()
+            PanelCard {
                 switch selection {
                 case .wall(let i):
                     WallPanel(plan: planBinding, wall: i, onEdit: edit, onShowElevation: { mode = .walls; wallIndex = i },
-                              onAddCorner: { edit { $0.insertCorner(onWall: i) }; selection = .corner(i + 1) })
+                              onAddCorner: { edit { $0.insertCorner(onWall: i) }; selection = .corner(i + 1) },
+                              onClose: { selection = nil })
                 case .opening(let id):
                     if let k = plan.openings.firstIndex(where: { $0.id == id }) {
                         OpeningPanel(plan: planBinding, index: k, onEdit: edit,
-                                     onDelete: { edit { $0.openings.remove(at: k) }; selection = .wall(plan.openings[k].wall) },
+                                     onDelete: { let w = plan.openings[k].wall; edit { $0.openings.remove(at: k) }; selection = .wall(w) },
                                      onDuplicate: { var newId: UUID?; edit { newId = $0.duplicateOpening(id)?.id }; if let newId { selection = .opening(newId) } },
-                                     onReplace: { showStylePicker = true })
+                                     onReplace: { showStylePicker = true },
+                                     onClose: { selection = nil })
                         .sheet(isPresented: $showStylePicker) {
                             OpeningStylePicker(current: plan.openings[k]) { st in
                                 edit { $0.openings[k].style = st.id; $0.openings[k].kind = st.kind }
@@ -131,53 +157,127 @@ struct ScanPreviewView: View {
                     if let k = plan.objects.firstIndex(where: { $0.id == id }) {
                         ObjectPanel(plan: planBinding, index: k, onEdit: edit,
                                     onDelete: { edit { $0.objects.remove(at: k) }; selection = nil },
-                                    onDuplicate: { var newId: UUID?; edit { newId = $0.duplicateObject(id)?.id }; if let newId { selection = .object(newId) } })
+                                    onDuplicate: { var newId: UUID?; edit { newId = $0.duplicateObject(id)?.id }; if let newId { selection = .object(newId) } },
+                                    onClose: { selection = nil })
                     }
                 case .measurement(let id):
                     if let m = plan.measurements.first(where: { $0.id == id }) {
-                        HStack {
-                            Label("\(Measure.ftIn(m.length))  ·  \(Measure.metric(m.length))", systemImage: "ruler").font(.headline)
-                            Spacer()
-                            Button(role: .destructive) { edit { $0.measurements.removeAll { $0.id == id } }; selection = nil } label: { Image(systemName: "trash") }
+                        PanelHeader(symbol: "ruler", title: Measure.ftIn(m.length), subtitle: Measure.metric(m.length), onClose: { selection = nil }) {
+                            RoundButton(symbol: "trash", tint: .red) { edit { $0.measurements.removeAll { $0.id == id } }; selection = nil }
                         }
-                        .padding()
                     }
                 case .corner(let i):
-                    HStack {
-                        Label("Corner \(i + 1) — drag to move", systemImage: "arrow.up.and.down.and.arrow.left.and.right")
-                        Spacer()
-                        Button("Done") { selection = nil }
+                    PanelHeader(symbol: "arrow.up.and.down.and.arrow.left.and.right", title: String(localized: "Corner \(i + 1)"),
+                                subtitle: String(localized: "Drag the handle to move it"), onClose: { selection = nil }) {
+                        if plan.wallCount > 3 {
+                            RoundButton(symbol: "trash", tint: .red) { edit { $0.removeCorner(i) }; selection = nil }
+                        }
                     }
-                    .padding()
                 case nil:
-                    summaryRow(plan)
+                    idleBar(plan)
                 }
             }
-            .background(.regularMaterial)
         } else if let plan, mode == .model {
-            VStack(spacing: 0) { Divider(); summaryRow(plan) }.background(.regularMaterial)
+            PanelCard { statsRow(plan) }
         }
     }
 
-    private func summaryRow(_ plan: FloorPlan) -> some View {
+    /// Nothing selected: Insert · Rotate · Measure · Square up, plus the room summary
+    private func idleBar(_ plan: FloorPlan) -> some View {
+        VStack(spacing: 12) {
+            ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
+                Menu {
+                    Section("Openings") {
+                        ForEach(OpeningKind.allCases) { kind in
+                            Button { insert(kind) } label: { Label(kind.title, systemImage: kind.systemImage) }
+                        }
+                    }
+                    Section("Objects") {
+                        ForEach(["Cabinet", "Island", "Appliance", "Fixture", "Furniture"], id: \.self) { name in
+                            Button { insertObject(name) } label: { Label(LocalizedStringKey(name), systemImage: "square.dashed") }
+                        }
+                    }
+                } label: { ChipLabel(symbol: "plus", title: "Insert", prominent: true) }
+                .buttonStyle(.plain)
+                ActionChip(symbol: "rotate.right", title: "Rotate") { edit { $0.rotate90() }; refitToken += 1 }
+                ActionChip(symbol: "ruler", title: "Measure", active: measureMode) { measureMode.toggle() }
+                ActionChip(symbol: "square.on.square.dashed", title: "Square up") { edit { $0 = $0.straightened() }; refitToken += 1 }
+            } }
+            statsRow(plan)
+        }
+    }
+
+    private func statsRow(_ plan: FloorPlan) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 14) {
+            HStack(spacing: 8) {
                 stat("Size", "\(Measure.ftIn(plan.width)) × \(Measure.ftIn(plan.depth))")
                 stat("Area", plan.area.squareFeet)
                 stat("Ceiling", Measure.ftIn(plan.wallHeight))
                 stat("Perimeter", Measure.ftIn(plan.perimeter))
-                stat("Walls", "\(plan.wallCount)")
                 stat("Doors / Windows", "\(plan.summary.doors) / \(plan.summary.windows)")
                 stat("Metric", "\(Measure.metric(plan.width)) × \(Measure.metric(plan.depth))")
             }
-            .padding(.horizontal).padding(.vertical, 10)
         }
     }
 
     private func stat(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            Text(value).font(.subheadline.bold()).monospacedDigit()
+        VStack(alignment: .leading, spacing: 3) {
+            Text(LocalizedStringKey(title)).font(.caption2.weight(.medium)).foregroundStyle(.secondary).lineLimit(1)
+            Text(value).font(.subheadline.weight(.semibold)).monospacedDigit().lineLimit(1)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 9)
+        .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    // MARK: Insert / dimension editing
+
+    private func insert(_ kind: OpeningKind) {
+        guard let plan else { return }
+        // longest scanned wall
+        let wall = (0..<plan.wallCount).filter { !plan.isInferred($0) }.max { plan.wallLength($0) < plan.wallLength($1) } ?? 0
+        var newId: UUID?
+        edit { newId = $0.addOpening(kind, on: wall).id }
+        if let newId { selection = .opening(newId) }
+    }
+
+    private func insertObject(_ name: String) {
+        var newId: UUID?
+        edit { newId = $0.addObject(name).id }
+        if let newId { selection = .object(newId) }
+    }
+
+    private func dimTitle(_ t: DimensionTarget) -> String {
+        switch t {
+        case .wall: String(localized: "Wall length")
+        case .openingWidth: String(localized: "Width")
+        case .openingLeft: String(localized: "From left")
+        case .openingRight: String(localized: "From right")
+        case .objectSide(_, let s): String(localized: "Distance to wall") + " · " + s
+        }
+    }
+
+    private func apply(_ t: DimensionTarget, _ m: Double) {
+        switch t {
+        case .wall(let i):
+            edit { $0.setWallLength(i, max(0.1, m)) }
+        case .openingWidth(let id):
+            edit { p in if let k = p.openings.firstIndex(where: { $0.id == id }) { p.openings[k].width = max(0.1, m); p.clampOpenings(on: p.openings[k].wall) } }
+        case .openingLeft(let id):
+            edit { p in if let k = p.openings.firstIndex(where: { $0.id == id }) { p.openings[k].offset = max(0, m) + p.openings[k].width / 2; p.clampOpenings(on: p.openings[k].wall) } }
+        case .openingRight(let id):
+            edit { p in
+                if let k = p.openings.firstIndex(where: { $0.id == id }) {
+                    p.openings[k].offset = p.wallLength(p.openings[k].wall) - max(0, m) - p.openings[k].width / 2
+                    p.clampOpenings(on: p.openings[k].wall)
+                }
+            }
+        case .objectSide(let id, let side):
+            edit { p in
+                guard let k = p.objects.firstIndex(where: { $0.id == id }) else { return }
+                let o = p.objects[k]
+                guard let s = p.objectSides(o).first(where: { $0.side == side }), let hit = p.rayToWall(from: s.point, direction: s.dir) else { return }
+                p.objects[k].center = o.center + s.dir * (hit.distance - max(0, m))
+            }
         }
     }
 
@@ -243,6 +343,89 @@ struct ScanPreviewView: View {
     }
 }
 
+// MARK: - Panel chrome
+
+/// Floating bottom card (rounded top, elevated background — readable in light and dark)
+private struct PanelCard<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) { content }
+            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background {
+                UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24, style: .continuous)
+                    .fill(Color(.secondarySystemBackground))
+                    .overlay(UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24, style: .continuous).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+                    .ignoresSafeArea(edges: .bottom)
+            }
+            .shadow(color: .black.opacity(0.18), radius: 18, y: -4)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+}
+
+private struct PanelHeader<Trailing: View>: View {
+    let symbol: String
+    let title: String
+    var subtitle: String? = nil
+    var onClose: () -> Void
+    @ViewBuilder var trailing: Trailing
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol).font(.body.weight(.semibold)).foregroundStyle(Color.accentColor)
+                .frame(width: 36, height: 36).background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.headline).lineLimit(1)
+                if let subtitle { Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            }
+            Spacer(minLength: 8)
+            trailing
+            RoundButton(symbol: "xmark", action: onClose)
+        }
+    }
+}
+
+private struct RoundButton: View {
+    let symbol: String
+    var tint: Color = .primary
+    var action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.subheadline.weight(.semibold)).foregroundStyle(tint)
+                .frame(width: 36, height: 36).background(Color(.tertiarySystemFill), in: Circle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// Pill label used in the idle bar and panels (wrap in Button / Menu)
+private struct ChipLabel: View {
+    let symbol: String
+    let title: LocalizedStringKey
+    var prominent = false
+    var active = false
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: symbol).font(.subheadline.weight(.semibold))
+            Text(title).font(.subheadline.weight(.semibold)).lineLimit(1)
+        }
+        .padding(.horizontal, 14).frame(height: 40)
+        .foregroundStyle(prominent ? Color(.systemBackground) : (active ? Color.accentColor : .primary))
+        .background(prominent ? Color.primary : (active ? Color.accentColor.opacity(0.14) : Color(.tertiarySystemFill)), in: Capsule())
+        .contentShape(Capsule())
+    }
+}
+
+private struct ActionChip: View {
+    let symbol: String
+    let title: LocalizedStringKey
+    var active = false
+    var action: () -> Void
+    var body: some View {
+        Button(action: action) { ChipLabel(symbol: symbol, title: title, active: active) }.buttonStyle(.plain)
+    }
+}
+
 // MARK: - Panels
 
 private struct WallPanel: View {
@@ -251,38 +434,25 @@ private struct WallPanel: View {
     var onEdit: ((inout FloorPlan) -> Void) -> Void
     var onShowElevation: () -> Void
     var onAddCorner: () -> Void
+    var onClose: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("Wall \(wall + 1)").font(.headline)
-                if plan.isInferred(wall) {
-                    Text("not scanned").font(.caption.weight(.semibold)).foregroundStyle(.orange)
-                        .padding(.horizontal, 7).padding(.vertical, 3).background(Color.orange.opacity(0.14), in: Capsule())
-                }
-                Spacer()
-                MeasureField(title: "Length", meters: plan.wallLength(wall)) { m in onEdit { $0.setWallLength(wall, m) } }
-            }
+        PanelHeader(symbol: "line.diagonal", title: String(localized: "Wall \(wall + 1)"),
+                    subtitle: plan.isInferred(wall) ? String(localized: "not scanned") : "\(plan.openings(on: wall).count) " + String(localized: "openings"),
+                    onClose: onClose) {
+            RoundButton(symbol: "rectangle.portrait.and.arrow.right", tint: .accentColor, action: onShowElevation)
+        }
+        ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 8) {
+                MeasureTile(title: String(localized: "Length"), meters: plan.wallLength(wall), tint: .accentColor) { m in onEdit { $0.setWallLength(wall, m) } }
+                MeasureTile(title: String(localized: "Ceiling"), meters: plan.wallHeight) { m in onEdit { $0.wallHeight = m } }
+                Divider().frame(height: 30)
                 ForEach(OpeningKind.allCases) { kind in
-                    Button { onEdit { $0.addOpening(kind, on: wall) } } label: {
-                        Label(kind.title, systemImage: kind.systemImage).font(.caption)
-                    }
-                    .buttonStyle(.bordered)
+                    ActionChip(symbol: kind.systemImage, title: LocalizedStringKey(kind.title)) { onEdit { $0.addOpening(kind, on: wall) } }
                 }
-                Button(action: onAddCorner) { Label("Add corner", systemImage: "plus.viewfinder").font(.caption) }
-                    .buttonStyle(.bordered)
-                Spacer()
-                Button(action: onShowElevation) { Label("Wall view", systemImage: "rectangle.portrait.and.arrow.right").font(.caption) }
-                    .buttonStyle(.borderedProminent)
-            }
-            HStack {
-                MeasureField(title: "Ceiling", meters: plan.wallHeight) { m in onEdit { $0.wallHeight = m } }
-                Spacer()
-                Text("\(plan.openings(on: wall).count) openings").font(.caption).foregroundStyle(.secondary)
+                ActionChip(symbol: "plus.viewfinder", title: "Add corner", action: onAddCorner)
             }
         }
-        .padding()
     }
 }
 
@@ -293,32 +463,33 @@ private struct OpeningPanel: View {
     var onDelete: () -> Void
     var onDuplicate: () -> Void
     var onReplace: () -> Void
+    var onClose: () -> Void
 
     private var o: PlanOpening { plan.openings[index] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                let st = OpeningCatalog.style(for: o)
-                Image(systemName: st.symbol).foregroundStyle(Color.accentColor)
-                Text(LocalizedStringKey(st.name)).font(.headline)
-                Spacer()
-                Button(action: onReplace) { Label("Replace with…", systemImage: "arrow.triangle.2.circlepath").font(.caption) }.buttonStyle(.bordered)
-                Button(action: onDuplicate) { Image(systemName: "plus.square.on.square") }
-                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
-            }
-            HStack(spacing: 12) {
-                MeasureField(title: "Width", meters: o.width) { m in
+        let st = OpeningCatalog.style(for: o)
+        PanelHeader(symbol: st.symbol, title: String(localized: String.LocalizationValue(st.name)),
+                    subtitle: String(localized: "Wall \(o.wall + 1)"), onClose: onClose) {
+            RoundButton(symbol: "arrow.triangle.2.circlepath", tint: .accentColor, action: onReplace)
+            RoundButton(symbol: "plus.square.on.square", action: onDuplicate)
+            RoundButton(symbol: "trash", tint: .red, action: onDelete)
+        }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                MeasureTile(title: String(localized: "Width"), meters: o.width, tint: .accentColor) { m in
                     onEdit { $0.openings[index].width = max(0.1, m); $0.clampOpenings(on: o.wall) }
                 }
-                MeasureField(title: "Height", meters: o.height) { m in onEdit { $0.openings[index].height = max(0.1, m) } }
-                MeasureField(title: "Sill", meters: o.sill) { m in onEdit { $0.openings[index].sill = max(0, m) } }
-                MeasureField(title: "From left", meters: o.left) { m in
+                MeasureTile(title: String(localized: "Height"), meters: o.height) { m in onEdit { $0.openings[index].height = max(0.1, m) } }
+                MeasureTile(title: String(localized: "Sill"), meters: o.sill) { m in onEdit { $0.openings[index].sill = max(0, m) } }
+                MeasureTile(title: String(localized: "From left"), meters: o.left) { m in
                     onEdit { $0.openings[index].offset = m + o.width / 2; $0.clampOpenings(on: o.wall) }
+                }
+                MeasureTile(title: String(localized: "From right"), meters: plan.wallLength(o.wall) - o.right) { m in
+                    onEdit { $0.openings[index].offset = plan.wallLength(o.wall) - m - o.width / 2; $0.clampOpenings(on: o.wall) }
                 }
             }
         }
-        .padding()
     }
 }
 
@@ -328,37 +499,39 @@ private struct ObjectPanel: View {
     var onEdit: ((inout FloorPlan) -> Void) -> Void
     var onDelete: () -> Void
     var onDuplicate: () -> Void
+    var onClose: () -> Void
+    @State private var renaming = false
 
     private var o: PlanObject { plan.objects[index] }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                TextField("Name", text: Binding(get: { o.category.capitalized }, set: { v in onEdit { $0.objects[index].category = v } }))
-                    .font(.headline).textFieldStyle(.roundedBorder).frame(maxWidth: 200)
-                Spacer()
-                Button { onEdit { $0.objects[index].rotation += .pi / 2 } } label: { Image(systemName: "rotate.right") }
-                Button(action: onDuplicate) { Image(systemName: "plus.square.on.square") }
-                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    MeasureField(title: "Width", meters: o.width) { m in onEdit { $0.objects[index].width = max(0.05, m) } }
-                    MeasureField(title: "Depth", meters: o.depth) { m in onEdit { $0.objects[index].depth = max(0.05, m) } }
-                    MeasureField(title: "Height", meters: o.height) { m in onEdit { $0.objects[index].height = max(0.05, m) } }
-                    Divider().frame(height: 36)
-                    // distance to the wall on each side — editing slides the object
-                    ForEach(plan.objectSides(o)) { side in
-                        if let hit = plan.rayToWall(from: side.point, direction: side.dir) {
-                            MeasureField(title: sideTitle(side.side), meters: hit.distance) { m in
-                                onEdit { $0.objects[index].center = o.center + side.dir * (hit.distance - max(0, m)) }
-                            }
+        PanelHeader(symbol: "square.dashed", title: o.category.capitalized,
+                    subtitle: "\(Measure.ftIn(o.width)) × \(Measure.ftIn(o.depth)) × \(Measure.ftIn(o.height))", onClose: onClose) {
+            RoundButton(symbol: "pencil") { renaming = true }
+            RoundButton(symbol: "rotate.right") { onEdit { $0.objects[index].rotation += .pi / 2 } }
+            RoundButton(symbol: "plus.square.on.square", action: onDuplicate)
+            RoundButton(symbol: "trash", tint: .red, action: onDelete)
+        }
+        .alert("Name", isPresented: $renaming) {
+            TextField("Name", text: Binding(get: { o.category.capitalized }, set: { v in onEdit { $0.objects[index].category = v } }))
+            Button("Done") {}
+        }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                MeasureTile(title: String(localized: "Width"), meters: o.width, tint: .accentColor) { m in onEdit { $0.objects[index].width = max(0.05, m) } }
+                MeasureTile(title: String(localized: "Depth"), meters: o.depth) { m in onEdit { $0.objects[index].depth = max(0.05, m) } }
+                MeasureTile(title: String(localized: "Height"), meters: o.height) { m in onEdit { $0.objects[index].height = max(0.05, m) } }
+                Divider().frame(height: 30)
+                // distance to the wall on each side — editing slides the object
+                ForEach(plan.objectSides(o)) { side in
+                    if let hit = plan.rayToWall(from: side.point, direction: side.dir) {
+                        MeasureTile(title: sideTitle(side.side), meters: hit.distance) { m in
+                            onEdit { $0.objects[index].center = o.center + side.dir * (hit.distance - max(0, m)) }
                         }
                     }
                 }
             }
         }
-        .padding()
     }
 
     private func sideTitle(_ s: String) -> String {
@@ -368,37 +541,6 @@ private struct ObjectPanel: View {
         case "front": String(localized: "To front wall")
         default: String(localized: "To back wall")
         }
-    }
-}
-
-/// Small labeled text field showing feet-inches; commits parsed value on return.
-struct MeasureField: View {
-    let title: String
-    let meters: Double
-    var onCommit: (Double) -> Void
-
-    @State private var text = ""
-    @FocusState private var focused: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.caption2).foregroundStyle(.secondary)
-            TextField("", text: $text)
-                .font(.subheadline.monospacedDigit())
-                .textFieldStyle(.roundedBorder)
-                .frame(width: 92)
-                .focused($focused)
-                .submitLabel(.done)
-                .onSubmit(commit)
-                .onChange(of: focused) { _, f in if !f { commit() } }
-        }
-        .onAppear { text = Measure.ftIn(meters) }
-        .onChange(of: meters) { _, m in if !focused { text = Measure.ftIn(m) } }
-    }
-
-    private func commit() {
-        if let m = Measure.parse(text), abs(m - meters) > 0.001 { onCommit(m) }
-        text = Measure.ftIn(Measure.parse(text) ?? meters)
     }
 }
 
