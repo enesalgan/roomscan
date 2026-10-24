@@ -27,6 +27,8 @@ struct ScanPreviewView: View {
     @State private var error: String?
     @State private var loading = true
     @State private var refitToken = 0
+    @State private var measureMode = false
+    @State private var showStylePicker = false
 
     var body: some View {
         NavigationStack {
@@ -52,6 +54,9 @@ struct ScanPreviewView: View {
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { undo() } label: { Image(systemName: "arrow.uturn.backward") }.disabled(history.isEmpty)
                     Button { redo() } label: { Image(systemName: "arrow.uturn.forward") }.disabled(future.isEmpty)
+                    Button { measureMode.toggle(); if measureMode { mode = .plan; selection = nil } } label: {
+                        Image(systemName: "ruler").foregroundStyle(measureMode ? Color.accentColor : .primary)
+                    }
                     Menu {
                         Button { edit { $0 = $0.straightened() }; selection = nil; refitToken += 1 } label: { Label("Square up walls", systemImage: "square.on.square.dashed") }
                         if let modelURL {
@@ -84,7 +89,7 @@ struct ScanPreviewView: View {
         } else {
             switch mode {
             case .plan:
-                PlanEditorView(plan: planBinding, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true }, refitToken: refitToken)
+                PlanEditorView(plan: planBinding, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true }, refitToken: refitToken, measureMode: $measureMode)
             case .walls:
                 WallElevationView(plan: planBinding, wall: $wallIndex, selection: $selection, onBeginEdit: pushHistory, onEndEdit: { dirty = true })
             case .model:
@@ -108,18 +113,34 @@ struct ScanPreviewView: View {
                 Divider()
                 switch selection {
                 case .wall(let i):
-                    WallPanel(plan: planBinding, wall: i, onEdit: edit) { mode = .walls; wallIndex = i }
+                    WallPanel(plan: planBinding, wall: i, onEdit: edit, onShowElevation: { mode = .walls; wallIndex = i },
+                              onAddCorner: { edit { $0.insertCorner(onWall: i) }; selection = .corner(i + 1) })
                 case .opening(let id):
                     if let k = plan.openings.firstIndex(where: { $0.id == id }) {
-                        OpeningPanel(plan: planBinding, index: k, onEdit: edit, onDelete: {
-                            edit { $0.openings.remove(at: k) }; selection = .wall(plan.openings[k].wall)
-                        })
+                        OpeningPanel(plan: planBinding, index: k, onEdit: edit,
+                                     onDelete: { edit { $0.openings.remove(at: k) }; selection = .wall(plan.openings[k].wall) },
+                                     onDuplicate: { var newId: UUID?; edit { newId = $0.duplicateOpening(id)?.id }; if let newId { selection = .opening(newId) } },
+                                     onReplace: { showStylePicker = true })
+                        .sheet(isPresented: $showStylePicker) {
+                            OpeningStylePicker(current: plan.openings[k]) { st in
+                                edit { $0.openings[k].style = st.id; $0.openings[k].kind = st.kind }
+                            }
+                        }
                     }
                 case .object(let id):
                     if let k = plan.objects.firstIndex(where: { $0.id == id }) {
-                        ObjectPanel(plan: planBinding, index: k, onEdit: edit, onDelete: {
-                            edit { $0.objects.remove(at: k) }; selection = nil
-                        })
+                        ObjectPanel(plan: planBinding, index: k, onEdit: edit,
+                                    onDelete: { edit { $0.objects.remove(at: k) }; selection = nil },
+                                    onDuplicate: { var newId: UUID?; edit { newId = $0.duplicateObject(id)?.id }; if let newId { selection = .object(newId) } })
+                    }
+                case .measurement(let id):
+                    if let m = plan.measurements.first(where: { $0.id == id }) {
+                        HStack {
+                            Label("\(Measure.ftIn(m.length))  ·  \(Measure.metric(m.length))", systemImage: "ruler").font(.headline)
+                            Spacer()
+                            Button(role: .destructive) { edit { $0.measurements.removeAll { $0.id == id } }; selection = nil } label: { Image(systemName: "trash") }
+                        }
+                        .padding()
                     }
                 case .corner(let i):
                     HStack {
@@ -229,6 +250,7 @@ private struct WallPanel: View {
     let wall: Int
     var onEdit: ((inout FloorPlan) -> Void) -> Void
     var onShowElevation: () -> Void
+    var onAddCorner: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -248,6 +270,8 @@ private struct WallPanel: View {
                     }
                     .buttonStyle(.bordered)
                 }
+                Button(action: onAddCorner) { Label("Add corner", systemImage: "plus.viewfinder").font(.caption) }
+                    .buttonStyle(.bordered)
                 Spacer()
                 Button(action: onShowElevation) { Label("Wall view", systemImage: "rectangle.portrait.and.arrow.right").font(.caption) }
                     .buttonStyle(.borderedProminent)
@@ -267,17 +291,20 @@ private struct OpeningPanel: View {
     let index: Int
     var onEdit: ((inout FloorPlan) -> Void) -> Void
     var onDelete: () -> Void
+    var onDuplicate: () -> Void
+    var onReplace: () -> Void
 
     private var o: PlanOpening { plan.openings[index] }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Picker("Type", selection: Binding(get: { o.kind }, set: { k in onEdit { $0.openings[index].kind = k } })) {
-                    ForEach(OpeningKind.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented).frame(maxWidth: 260)
+            HStack(spacing: 10) {
+                let st = OpeningCatalog.style(for: o)
+                Image(systemName: st.symbol).foregroundStyle(Color.accentColor)
+                Text(LocalizedStringKey(st.name)).font(.headline)
                 Spacer()
+                Button(action: onReplace) { Label("Replace with…", systemImage: "arrow.triangle.2.circlepath").font(.caption) }.buttonStyle(.bordered)
+                Button(action: onDuplicate) { Image(systemName: "plus.square.on.square") }
                 Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
             }
             HStack(spacing: 12) {
@@ -300,6 +327,7 @@ private struct ObjectPanel: View {
     let index: Int
     var onEdit: ((inout FloorPlan) -> Void) -> Void
     var onDelete: () -> Void
+    var onDuplicate: () -> Void
 
     private var o: PlanObject { plan.objects[index] }
 
@@ -307,20 +335,39 @@ private struct ObjectPanel: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 TextField("Name", text: Binding(get: { o.category.capitalized }, set: { v in onEdit { $0.objects[index].category = v } }))
-                    .font(.headline).textFieldStyle(.roundedBorder).frame(maxWidth: 220)
+                    .font(.headline).textFieldStyle(.roundedBorder).frame(maxWidth: 200)
                 Spacer()
                 Button { onEdit { $0.objects[index].rotation += .pi / 2 } } label: { Image(systemName: "rotate.right") }
+                Button(action: onDuplicate) { Image(systemName: "plus.square.on.square") }
                 Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }
             }
-            HStack(spacing: 12) {
-                MeasureField(title: "Width", meters: o.width) { m in onEdit { $0.objects[index].width = max(0.05, m) } }
-                MeasureField(title: "Depth", meters: o.depth) { m in onEdit { $0.objects[index].depth = max(0.05, m) } }
-                MeasureField(title: "Height", meters: o.height) { m in onEdit { $0.objects[index].height = max(0.05, m) } }
-                Spacer()
-                Text("Drag to move").font(.caption).foregroundStyle(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    MeasureField(title: "Width", meters: o.width) { m in onEdit { $0.objects[index].width = max(0.05, m) } }
+                    MeasureField(title: "Depth", meters: o.depth) { m in onEdit { $0.objects[index].depth = max(0.05, m) } }
+                    MeasureField(title: "Height", meters: o.height) { m in onEdit { $0.objects[index].height = max(0.05, m) } }
+                    Divider().frame(height: 36)
+                    // distance to the wall on each side — editing slides the object
+                    ForEach(plan.objectSides(o)) { side in
+                        if let hit = plan.rayToWall(from: side.point, direction: side.dir) {
+                            MeasureField(title: sideTitle(side.side), meters: hit.distance) { m in
+                                onEdit { $0.objects[index].center = o.center + side.dir * (hit.distance - max(0, m)) }
+                            }
+                        }
+                    }
+                }
             }
         }
         .padding()
+    }
+
+    private func sideTitle(_ s: String) -> String {
+        switch s {
+        case "left": String(localized: "To left wall")
+        case "right": String(localized: "To right wall")
+        case "front": String(localized: "To front wall")
+        default: String(localized: "To back wall")
+        }
     }
 }
 

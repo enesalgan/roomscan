@@ -45,6 +45,7 @@ struct PlanOpening: Codable, Hashable, Identifiable {
     var width: Double
     var height: Double
     var sill: Double        // bottom edge above floor (m)
+    var style: String? = nil   // OpeningCatalog style id (hung, casement, sliding, french…)
 
     var left: Double { offset - width / 2 }
     var right: Double { offset + width / 2 }
@@ -60,6 +61,14 @@ struct PlanObject: Codable, Hashable, Identifiable {
     var rotation: Double    // radians, in plan space
 }
 
+/// A user-added dimension between two points (measure tool)
+struct PlanMeasurement: Codable, Hashable, Identifiable {
+    var id: UUID = UUID()
+    var a: PlanPoint
+    var b: PlanPoint
+    var length: Double { a.distance(to: b) }
+}
+
 struct FloorPlan: Codable, Hashable {
     var corners: [PlanPoint]
     var wallHeight: Double = 2.44
@@ -68,6 +77,7 @@ struct FloorPlan: Codable, Hashable {
     var objects: [PlanObject] = []
     /// Wall indices that were not scanned (outline closed by inference). Drawn dashed.
     var inferredWalls: [Int] = []
+    var measurements: [PlanMeasurement] = []
 
     func isInferred(_ wall: Int) -> Bool { inferredWalls.contains(wall) }
 
@@ -134,6 +144,71 @@ struct FloorPlan: Codable, Hashable {
     }
 
     func openings(on wall: Int) -> [PlanOpening] { openings.filter { $0.wall == wall }.sorted { $0.offset < $1.offset } }
+
+    /// Splits wall i at its midpoint (adds a corner the user can drag → L-shapes, alcoves).
+    mutating func insertCorner(onWall i: Int) {
+        let half = wallLength(i) / 2
+        let mid = wallMid(i)
+        corners.insert(mid, at: i + 1)
+        for k in openings.indices {
+            if openings[k].wall > i { openings[k].wall += 1 }
+            else if openings[k].wall == i, openings[k].offset > half { openings[k].wall = i + 1; openings[k].offset -= half }
+        }
+        inferredWalls = inferredWalls.map { $0 > i ? $0 + 1 : $0 } + (inferredWalls.contains(i) ? [i + 1] : [])
+        clampOpenings(on: i); clampOpenings(on: i + 1)
+    }
+
+    @discardableResult
+    mutating func duplicateOpening(_ id: UUID) -> PlanOpening? {
+        guard let o = openings.first(where: { $0.id == id }) else { return nil }
+        var c = o; c.id = UUID()
+        let len = wallLength(o.wall)
+        c.offset = min(o.right + o.width / 2 + 0.1, len - o.width / 2)
+        if c.offset <= o.right { c.offset = max(o.left - o.width / 2 - 0.1, o.width / 2) }
+        openings.append(c)
+        return c
+    }
+
+    @discardableResult
+    mutating func duplicateObject(_ id: UUID) -> PlanObject? {
+        guard let o = objects.first(where: { $0.id == id }) else { return nil }
+        var c = o; c.id = UUID()
+        c.center = o.center + PlanPoint(x: cos(o.rotation), y: sin(o.rotation)) * (o.width + 0.15)
+        objects.append(c)
+        return c
+    }
+
+    /// Distance from `point` along `direction` (unit) to the first wall hit, with the hit point.
+    func rayToWall(from point: PlanPoint, direction d: PlanPoint) -> (distance: Double, hit: PlanPoint, wall: Int)? {
+        var best: (Double, PlanPoint, Int)?
+        for i in 0..<wallCount {
+            let a = wallStart(i), e = wallEnd(i) - wallStart(i)
+            let denom = d.cross(e)
+            guard abs(denom) > 1e-9 else { continue }
+            let t = (a - point).cross(e) / denom      // along ray
+            let u = (a - point).cross(d) / denom      // along wall (0…1)
+            guard t > 0.001, u >= -0.001, u <= 1.001 else { continue }
+            if best == nil || t < best!.0 { best = (t, point + d * t, i) }
+        }
+        return best.map { ($0.0, $0.1, $0.2) }
+    }
+
+    struct ObjectSide: Identifiable {
+        let side: String; let point: PlanPoint; let dir: PlanPoint
+        var id: String { side }
+    }
+
+    /// Object edge midpoints and outward directions in plan space for right/left/front/back
+    func objectSides(_ o: PlanObject) -> [ObjectSide] {
+        let ax = PlanPoint(x: cos(o.rotation), y: sin(o.rotation))      // object local +x
+        let ay = ax.perp                                                  // object local +y
+        return [
+            ObjectSide(side: "right", point: o.center + ax * (o.width / 2), dir: ax),
+            ObjectSide(side: "left",  point: o.center - ax * (o.width / 2), dir: ax * -1),
+            ObjectSide(side: "front", point: o.center + ay * (o.depth / 2), dir: ay),
+            ObjectSide(side: "back",  point: o.center - ay * (o.depth / 2), dir: ay * -1),
+        ]
+    }
 
     @discardableResult
     mutating func addOpening(_ kind: OpeningKind, on wall: Int) -> PlanOpening {
@@ -260,6 +335,7 @@ extension FloorPlan {
         }
         p.corners = corners.map(rot)
         p.objects = objects.map { var o = $0; o.center = rot(o.center); o.rotation += angle; return o }
+        p.measurements = measurements.map { var m = $0; m.a = rot(m.a); m.b = rot(m.b); return m }
 
         // Remember where openings are in space before walls move
         let openingAnchors: [(PlanOpening, PlanPoint)] = openings.map { ($0, rot(point(onWall: $0.wall, at: $0.offset))) }
@@ -326,6 +402,7 @@ extension FloorPlan {
         let b = p.bounds
         p.corners = p.corners.map { $0 - b.min }
         p.objects = p.objects.map { var o = $0; o.center = o.center - b.min; return o }
+        p.measurements = p.measurements.map { var m = $0; m.a = m.a - b.min; m.b = m.b - b.min; return m }
         return p
     }
 }

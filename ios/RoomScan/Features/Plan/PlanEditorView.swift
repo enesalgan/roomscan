@@ -5,6 +5,7 @@ enum PlanSelection: Hashable {
     case corner(Int)
     case opening(UUID)
     case object(UUID)
+    case measurement(UUID)
 }
 
 /// Top-down editable floor plan: pan/zoom, drag corners, drag openings along walls, drag objects,
@@ -15,6 +16,8 @@ struct PlanEditorView: View {
     var onBeginEdit: () -> Void
     var onEndEdit: () -> Void
     var refitToken: Int = 0                         // bump to re-fit the view (e.g. after "Square up")
+    @Binding var measureMode: Bool                  // tap two points to add a dimension
+    @State private var measureStart: PlanPoint?
 
     @State private var scale: CGFloat = 60          // points per meter
     @State private var baseScale: CGFloat = 60
@@ -49,7 +52,17 @@ struct PlanEditorView: View {
                         }
                         .onEnded { _ in baseScale = scale; pinchOrigin = nil }
                 )
-                .onTapGesture { loc in selection = hitTest(loc) }
+                .onTapGesture { loc in
+                    if measureMode { measureTap(loc) } else { selection = hitTest(loc) }
+                }
+                .onChange(of: measureMode) { _, on in if !on { measureStart = nil } }
+                .overlay(alignment: .top) {
+                    if measureMode {
+                        Text(measureStart == nil ? "Tap the first point" : "Tap the second point")
+                            .font(.caption.weight(.semibold)).padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(.regularMaterial, in: Capsule()).padding(.top, 10)
+                    }
+                }
                 .onAppear { if !didFit { fit(in: geo.size); didFit = true } }
                 .onChange(of: refitToken) { _, _ in withAnimation { fit(in: geo.size) } }
                 .overlay(alignment: .bottomTrailing) {
@@ -117,12 +130,46 @@ struct PlanEditorView: View {
             }
     }
 
+    /// Measure tool: snaps to corners, opening ends and object corners within 18pt
+    private func measureTap(_ loc: CGPoint) {
+        let p = snapTarget(loc) ?? snap(toPlan(loc))
+        if let a = measureStart {
+            onBeginEdit()
+            plan.measurements.append(PlanMeasurement(a: a, b: p))
+            onEndEdit()
+            measureStart = nil
+            measureMode = false
+            selection = .measurement(plan.measurements.last!.id)
+        } else {
+            measureStart = p
+        }
+    }
+
+    private func snapTargets() -> [PlanPoint] {
+        var pts = plan.corners
+        for o in plan.openings { let (a, b) = openingSegment(o); pts.append(a); pts.append(b) }
+        for o in plan.objects { pts.append(contentsOf: objectCorners(o)) }
+        return pts
+    }
+
+    private func snapTarget(_ loc: CGPoint) -> PlanPoint? {
+        snapTargets().min { hypot(toScreen($0).x - loc.x, toScreen($0).y - loc.y) < hypot(toScreen($1).x - loc.x, toScreen($1).y - loc.y) }
+            .flatMap { hypot(toScreen($0).x - loc.x, toScreen($0).y - loc.y) < 18 ? $0 : nil }
+    }
+
+    private func objectCorners(_ o: PlanObject) -> [PlanPoint] {
+        let ax = PlanPoint(x: cos(o.rotation), y: sin(o.rotation)), ay = ax.perp
+        let hw = o.width / 2, hd = o.depth / 2
+        return [o.center + ax * hw + ay * hd, o.center - ax * hw + ay * hd, o.center - ax * hw - ay * hd, o.center + ax * hw - ay * hd]
+    }
+
     private func snap(_ p: PlanPoint) -> PlanPoint { PlanPoint(x: snap(p.x), y: snap(p.y)) }
     private func snap(_ v: Double) -> Double { (v / 0.00635).rounded() * 0.00635 }   // 1/4 inch
 
     // MARK: Hit testing
 
     private func hitTest(_ s: CGPoint) -> PlanSelection? {
+        for m in plan.measurements where distance(s, toScreen(m.a), toScreen(m.b)) < 12 { return .measurement(m.id) }
         for i in 0..<plan.wallCount {
             let c = toScreen(plan.corners[i])
             if hypot(c.x - s.x, c.y - s.y) < 16 { return .corner(i) }
@@ -243,6 +290,38 @@ struct PlanEditorView: View {
             let emphasized = selection == .opening(o.id) || selection == .wall(o.wall)
             drawOpeningDims(&ctx, o, emphasized: emphasized)
         }
+
+        // User measurements
+        for m in plan.measurements {
+            let sel = selection == .measurement(m.id)
+            dimensionLine(&ctx, from: toScreen(m.a), to: toScreen(m.b), text: Measure.ftIn(m.length),
+                          color: sel ? dim : Color.purple, emphasized: true, extFrom: nil, extTo: nil)
+            for p in [m.a, m.b] {
+                let c = toScreen(p)
+                ctx.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(sel ? dim : .purple))
+            }
+        }
+
+        // Selected object → distances to the walls on each side
+        if case .object(let id) = selection, let o = plan.objects.first(where: { $0.id == id }) {
+            for side in plan.objectSides(o) {
+                guard let hit = plan.rayToWall(from: side.point, direction: side.dir), hit.distance > 0.02 else { continue }
+                dimensionLine(&ctx, from: toScreen(side.point), to: toScreen(hit.hit), text: Measure.ftIn(hit.distance),
+                              color: dim, emphasized: false, extFrom: nil, extTo: nil)
+            }
+        }
+
+        // Measure tool: first point + snap hints
+        if measureMode {
+            for p in snapTargets() {
+                let c = toScreen(p)
+                ctx.stroke(Path(ellipseIn: CGRect(x: c.x - 5, y: c.y - 5, width: 10, height: 10)), with: .color(dim.opacity(0.8)), lineWidth: 1.5)
+            }
+            if let a = measureStart {
+                let c = toScreen(a)
+                ctx.fill(Path(ellipseIn: CGRect(x: c.x - 6, y: c.y - 6, width: 12, height: 12)), with: .color(dim))
+            }
+        }
     }
 
     private func drawDotGrid(_ ctx: inout GraphicsContext, size: CGSize) {
@@ -287,22 +366,62 @@ struct PlanEditorView: View {
             l.translateBy(x: sa.x, y: sa.y)
             l.rotate(by: .radians(angle))
             l.fill(Path(CGRect(x: 0, y: -t / 2 - 3.5, width: len, height: t + 7)), with: .color(paper))   // cut the wall
-            switch o.kind {
-            case .door:
-                var leaf = Path()
-                leaf.move(to: .zero); leaf.addLine(to: CGPoint(x: 0, y: inwardSign * len))
-                var arc = Path()
-                arc.move(to: CGPoint(x: len, y: 0))
-                for k in 1...16 {
-                    let a = Double(k) / 16 * .pi / 2
-                    arc.addLine(to: CGPoint(x: len * cos(a), y: inwardSign * len * sin(a)))
-                }
+            let style = OpeningCatalog.style(for: o).id
+            func swing(from hinge: CGFloat, radius: CGFloat, sign: CGFloat) {
+                var leaf = Path(); leaf.move(to: CGPoint(x: hinge, y: 0)); leaf.addLine(to: CGPoint(x: hinge, y: inwardSign * radius))
+                var arc = Path(); arc.move(to: CGPoint(x: hinge + sign * radius, y: 0))
+                for k in 1...16 { let a = Double(k) / 16 * .pi / 2; arc.addLine(to: CGPoint(x: hinge + sign * radius * cos(a), y: inwardSign * radius * sin(a))) }
                 l.stroke(leaf, with: .color(stroke), lineWidth: 2.5)
                 l.stroke(arc, with: .color(stroke.opacity(0.7)), lineWidth: 1)
+            }
+            switch o.kind {
+            case .door:
+                switch style {
+                case "french":
+                    swing(from: 0, radius: len / 2, sign: 1); swing(from: len, radius: len / 2, sign: -1)
+                case "sliding":
+                    var p = Path()
+                    p.move(to: CGPoint(x: 0, y: -t / 4)); p.addLine(to: CGPoint(x: len * 0.55, y: -t / 4))
+                    p.move(to: CGPoint(x: len * 0.45, y: t / 4)); p.addLine(to: CGPoint(x: len, y: t / 4))
+                    l.stroke(p, with: .color(stroke), lineWidth: 2)
+                case "pocket":
+                    var p = Path(); p.move(to: CGPoint(x: len * 0.5, y: 0)); p.addLine(to: CGPoint(x: len, y: 0))
+                    var inWall = Path(); inWall.move(to: CGPoint(x: -len * 0.5, y: 0)); inWall.addLine(to: CGPoint(x: 0, y: 0))
+                    l.stroke(p, with: .color(stroke), lineWidth: 2)
+                    l.stroke(inWall, with: .color(stroke.opacity(0.5)), style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                case "bifold":
+                    var z = Path(); z.move(to: .zero)
+                    z.addLine(to: CGPoint(x: len * 0.25, y: inwardSign * len * 0.22)); z.addLine(to: CGPoint(x: len * 0.5, y: 0))
+                    z.addLine(to: CGPoint(x: len * 0.75, y: inwardSign * len * 0.22)); z.addLine(to: CGPoint(x: len, y: 0))
+                    l.stroke(z, with: .color(stroke), lineWidth: 1.8)
+                case "garage":
+                    var p = Path(); p.move(to: CGPoint(x: 0, y: 0)); p.addLine(to: CGPoint(x: len, y: 0))
+                    l.stroke(p, with: .color(stroke), lineWidth: 3)
+                default:
+                    swing(from: 0, radius: len, sign: 1)
+                }
             case .window:
                 l.fill(Path(CGRect(x: 0, y: -t / 3, width: len, height: 2 * t / 3)), with: .color(.cyan.opacity(0.22)))
                 var lines = Path()
-                for yy in [-t / 3, 0, t / 3] { lines.move(to: CGPoint(x: 0, y: yy)); lines.addLine(to: CGPoint(x: len, y: yy)) }
+                switch style {
+                case "fixed", "picture":
+                    lines.move(to: CGPoint(x: 0, y: 0)); lines.addLine(to: CGPoint(x: len, y: 0))
+                case "sliding":
+                    lines.move(to: CGPoint(x: 0, y: -t / 5)); lines.addLine(to: CGPoint(x: len * 0.55, y: -t / 5))
+                    lines.move(to: CGPoint(x: len * 0.45, y: t / 5)); lines.addLine(to: CGPoint(x: len, y: t / 5))
+                case "casement", "awning":
+                    for yy in [-t / 4, t / 4] { lines.move(to: CGPoint(x: 0, y: yy)); lines.addLine(to: CGPoint(x: len, y: yy)) }
+                    lines.move(to: CGPoint(x: len / 2, y: -t / 4)); lines.addLine(to: CGPoint(x: len / 2, y: t / 4))
+                case "bay", "bow":
+                    let out = -inwardSign * len * 0.28
+                    var bay = Path()
+                    bay.move(to: .zero); bay.addLine(to: CGPoint(x: len * 0.25, y: out)); bay.addLine(to: CGPoint(x: len * 0.75, y: out)); bay.addLine(to: CGPoint(x: len, y: 0))
+                    l.fill(bay, with: .color(.cyan.opacity(0.15)))
+                    l.stroke(bay, with: .color(stroke), lineWidth: 1.5)
+                    lines.move(to: CGPoint(x: 0, y: 0)); lines.addLine(to: CGPoint(x: len, y: 0))
+                default:
+                    for yy in [-t / 3, 0, t / 3] { lines.move(to: CGPoint(x: 0, y: yy)); lines.addLine(to: CGPoint(x: len, y: yy)) }
+                }
                 l.stroke(lines, with: .color(stroke), lineWidth: 1.2)
             case .opening:
                 var dashed = Path()

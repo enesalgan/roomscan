@@ -84,7 +84,21 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     private var continuation: CheckedContinuation<CLLocation, Error>?
 
+    private var cached: (AddressFields, Date)?
+
+    /// Requests permission early and caches a fix for ~3 minutes.
+    func prewarm() {
+        Task { _ = try? await currentAddress() }
+    }
+
     func currentAddress() async throws -> AddressFields {
+        if let c = cached, Date().timeIntervalSince(c.1) < 180 { return c.0 }
+        let a = try await fetchAddress()
+        cached = (a, Date())
+        return a
+    }
+
+    private func fetchAddress() async throws -> AddressFields {
         let location = try await currentLocation()
         let placemarks = try await CLGeocoder().reverseGeocodeLocation(location)
         guard let p = placemarks.first else { throw AppError.message("Could not resolve address") }

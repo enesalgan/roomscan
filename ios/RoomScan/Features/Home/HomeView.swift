@@ -122,6 +122,7 @@ struct HomeView: View {
     private func load() async {
         recent = (try? await Repository.jobs()) ?? []
         await session.refreshEntitlement()
+        LocationService.shared.prewarm()   // ask for permission + cache a fix so the first scan gets its address instantly
     }
 
     /// One tap → scanner opens immediately. The address is fetched in the background and
@@ -139,10 +140,12 @@ struct HomeView: View {
             job = saved
         } catch { startError = error.localizedDescription; return }
 
-        // background: fill in address + name
+        // background: fill in address + name (retry once — the permission sheet may be up during the first try)
         let jobId = job.id
         Task.detached(priority: .utility) {
-            guard let a = try? await LocationService.shared.currentAddress() else { return }
+            var found: AddressFields? = try? await LocationService.shared.currentAddress()
+            if found == nil { try? await Task.sleep(for: .seconds(4)); found = try? await LocationService.shared.currentAddress() }
+            guard let a = found else { return }
             guard var latest = try? await Repository.job(id: jobId) else { return }
             latest.addressLine1 = a.line1.nilIfEmpty; latest.addressLine2 = a.line2.nilIfEmpty
             latest.city = a.city.nilIfEmpty; latest.state = a.state.nilIfEmpty; latest.postalCode = a.postalCode.nilIfEmpty

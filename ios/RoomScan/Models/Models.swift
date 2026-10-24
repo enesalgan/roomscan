@@ -134,6 +134,7 @@ struct Job: Codable, Identifiable, Hashable {
     var estimateAmount: Double?
     var estimateCurrency: String = "USD"
     var notes: String?
+    var floorLayout: [RoomPlacement]?
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
     var deletedAt: Date?
@@ -158,10 +159,21 @@ struct Job: Codable, Identifiable, Hashable {
         case scheduledAt = "scheduled_at"
         case estimateAmount = "estimate_amount"
         case estimateCurrency = "estimate_currency"
+        case floorLayout = "floor_layout"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case deletedAt = "deleted_at"
     }
+}
+
+/// Where a scanned room sits on the job's combined floor plan
+struct RoomPlacement: Codable, Hashable {
+    var scanId: UUID
+    var x: Double = 0        // offset of the room's plan origin, meters
+    var y: Double = 0
+    var rotation: Double = 0 // radians
+
+    enum CodingKeys: String, CodingKey { case scanId = "scan_id", x, y, rotation }
 }
 
 struct Scan: Codable, Identifiable, Hashable {

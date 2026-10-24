@@ -18,6 +18,7 @@ struct JobDetailView: View {
     @State private var showPaywall = false
     @State private var scanToPreview: Scan?
     @State private var confirmDelete = false
+    @State private var showFloorMap = false
 
     var body: some View {
         Group {
@@ -25,6 +26,7 @@ struct JobDetailView: View {
                 List {
                     headerSection(job)
                     customerSection(job)
+                    floorPlanSection(job)
                     scansSection(job)
                     PhotosSection(job: job, photos: $photos)
                     if let n = job.notes, !n.isEmpty { Section("Notes") { Text(n) } }
@@ -64,6 +66,9 @@ struct JobDetailView: View {
                     }, onPhoto: { p in photos.append(p) })
                 }
                 .sheet(isPresented: $showPaywall) { PaywallView() }
+                .fullScreenCover(isPresented: $showFloorMap) {
+                    FloorMapView(job: job, scans: scans) { self.job = $0 }
+                }
                 .fullScreenCover(item: $scanToPreview) { s in
                     ScanPreviewView(scan: s) { updated in
                         if let i = scans.firstIndex(where: { $0.id == updated.id }) { scans[i] = updated }
@@ -124,12 +129,33 @@ struct JobDetailView: View {
         }
     }
 
+    @ViewBuilder private func floorPlanSection(_ job: Job) -> some View {
+        if scans.contains(where: { $0.plan != nil }) {
+            Section {
+                Button { showFloorMap = true } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        FloorMapPreview(job: job, scans: scans)
+                            .frame(height: 170)
+                            .background(Color(.systemGroupedBackground), in: RoundedRectangle(cornerRadius: 10))
+                        HStack {
+                            Label("Floor plan", systemImage: "square.split.bottomrightquarter").font(.subheadline.weight(.semibold))
+                            Spacer()
+                            Text("\(scans.filter { $0.plan != nil }.count) rooms · arrange").font(.caption).foregroundStyle(.secondary)
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
     @ViewBuilder private func scansSection(_ job: Job) -> some View {
         Section {
             Button {
                 startScan()
             } label: {
-                Label("Scan a room with LiDAR", systemImage: "cube.transparent")
+                Label(scans.isEmpty ? "Scan a room with LiDAR" : "Scan another room", systemImage: "cube.transparent")
                     .font(.headline)
             }
             ForEach(scans) { scan in

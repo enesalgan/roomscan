@@ -77,6 +77,7 @@ create table jobs (
   estimate_amount numeric(12,2),
   estimate_currency text not null default 'USD',
   notes           text,
+  floor_layout    jsonb,                            -- [{scan_id, x, y, rotation}] room placements on the combined plan
   local_id        text,                             -- client-side id for offline sync
   created_at      timestamptz not null default now(),
   updated_at      timestamptz not null default now(),
