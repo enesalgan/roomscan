@@ -40,7 +40,8 @@ struct FloorMapView: View {
                             .onEnded { _ in baseScale = scale; pinchOrigin = nil }
                     )
                     .onTapGesture { loc in selected = hit(loc) }
-                    .onAppear { if !didFit { setup(); fit(in: geo.size); didFit = true } }
+                    .onAppear { setup(); if geo.size.width > 0, !didFit { fit(in: geo.size); didFit = true } }
+                    .onChange(of: geo.size) { _, size in if size.width > 0, !didFit { fit(in: size); didFit = true } }
                     .overlay(alignment: .bottomTrailing) {
                         Button { withAnimation { fit(in: geo.size) } } label: {
                             Image(systemName: "arrow.down.left.and.arrow.up.right").font(.body.weight(.semibold)).padding(10)

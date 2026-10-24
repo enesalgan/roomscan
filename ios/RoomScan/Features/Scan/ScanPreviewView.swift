@@ -8,6 +8,7 @@ struct ScanPreviewView: View {
     @Environment(\.dismiss) private var dismiss
     @State var scan: Scan
     var onUpdated: (Scan) -> Void = { _ in }
+    var onAddRoom: (() -> Void)? = nil
 
     enum Mode: String, CaseIterable, Identifiable {
         case plan = "2D", walls = "Walls", model = "3D", mesh = "Scan"
@@ -187,6 +188,11 @@ struct ScanPreviewView: View {
         VStack(spacing: 12) {
             ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 8) {
                 Menu {
+                    if let onAddRoom {
+                        Section("Rooms") {
+                            Button { onAddRoom() } label: { Label("Scan another room", systemImage: "cube.transparent") }
+                        }
+                    }
                     Section("Openings") {
                         ForEach(OpeningKind.allCases) { kind in
                             Button { insert(kind) } label: { Label(kind.title, systemImage: kind.systemImage) }

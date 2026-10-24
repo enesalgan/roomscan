@@ -7,6 +7,7 @@ struct JobDetailView: View {
     @Environment(\.dismiss) private var dismiss
     let jobId: UUID
     var autoStartScan = false
+    var autoRoomName: String? = nil
 
     @State private var job: Job?
     @State private var didAutoStart = false
@@ -19,6 +20,10 @@ struct JobDetailView: View {
     @State private var scanToPreview: Scan?
     @State private var confirmDelete = false
     @State private var showFloorMap = false
+    @State private var showRoomPicker = false
+    @State private var pendingRoomName: String?
+    @State private var renaming = false
+    @State private var newTitle = ""
 
     var body: some View {
         Group {
@@ -32,12 +37,13 @@ struct JobDetailView: View {
                     if let n = job.notes, !n.isEmpty { Section("Notes") { Text(n) } }
                     if let error { Text(error).foregroundStyle(.red).font(.footnote) }
                 }
-                .navigationTitle(job.title)
+                .navigationTitle("")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
                         Menu {
-                            Button { showEdit = true } label: { Label("Edit", systemImage: "pencil") }
+                            Button { newTitle = job.title; renaming = true } label: { Label("Rename", systemImage: "textformat") }
+                            Button { showEdit = true } label: { Label("Edit details", systemImage: "pencil") }
                             Menu("Status") {
                                 ForEach(JobStatus.allCases) { s in
                                     Button { Task { await setStatus(s) } } label: {
@@ -53,8 +59,19 @@ struct JobDetailView: View {
                 .sheet(isPresented: $showEdit) {
                     JobEditView(job: job) { self.job = $0 }
                 }
+                .alert("Rename job", isPresented: $renaming) {
+                    TextField("Name", text: $newTitle)
+                    Button("Save") { Task { await rename(newTitle) } }
+                    Button("Cancel", role: .cancel) {}
+                }
+                .sheet(isPresented: $showRoomPicker) {
+                    RoomTypeSheet(existing: scans.map(\.name)) { name in
+                        pendingRoomName = name
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { showScanner = true }
+                    }
+                }
                 .fullScreenCover(isPresented: $showScanner) {
-                    ScanSessionView(job: job, existingScans: scans.count, onSaved: { saved in
+                    ScanSessionView(job: job, existingScans: scans.count, roomName: pendingRoomName, onSaved: { saved in
                         scans.insert(saved, at: 0)
                         if job.status == .new || job.status == .scheduled { self.job?.status = .measured }
                         Task {
@@ -64,15 +81,19 @@ struct JobDetailView: View {
                         // open the 2D plan right away
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { scanToPreview = saved }
                     }, onPhoto: { p in photos.append(p) })
+                    .onDisappear { pendingRoomName = nil }
                 }
                 .sheet(isPresented: $showPaywall) { PaywallView() }
                 .fullScreenCover(isPresented: $showFloorMap) {
                     FloorMapView(job: job, scans: scans) { self.job = $0 }
                 }
                 .fullScreenCover(item: $scanToPreview) { s in
-                    ScanPreviewView(scan: s) { updated in
+                    ScanPreviewView(scan: s, onUpdated: { updated in
                         if let i = scans.firstIndex(where: { $0.id == updated.id }) { scans[i] = updated }
-                    }
+                    }, onAddRoom: {
+                        scanToPreview = nil
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { startScan() }
+                    })
                 }
                 .confirmationDialog("Delete this job?", isPresented: $confirmDelete, titleVisibility: .visible) {
                     Button("Delete", role: .destructive) { Task { await deleteJob() } }
@@ -88,6 +109,14 @@ struct JobDetailView: View {
 
     @ViewBuilder private func headerSection(_ job: Job) -> some View {
         Section {
+            Button { newTitle = job.title; renaming = true } label: {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(job.title).font(.title2.weight(.bold)).fontDesign(.rounded).foregroundStyle(.primary).lineLimit(2)
+                    Image(systemName: "pencil").font(.subheadline).foregroundStyle(.tertiary)
+                    Spacer()
+                }
+            }
+            .buttonStyle(.plain)
             HStack {
                 StatusChip(status: job.status)
                 Spacer()
@@ -192,7 +221,13 @@ struct JobDetailView: View {
     private func startScan() {
         guard RoomCaptureSession.isSupported else { error = AppError.lidarUnsupported.localizedDescription; return }
         guard session.entitlement.canScan else { showPaywall = true; return }
-        showScanner = true
+        if pendingRoomName == nil { showRoomPicker = true } else { showScanner = true }
+    }
+
+    private func rename(_ title: String) async {
+        guard var j = job, let t = title.nilIfEmpty, t != j.title else { return }
+        j.title = t
+        do { job = try await Repository.upsert(j) } catch { self.error = error.localizedDescription }
     }
 
     private func load() async {
@@ -203,6 +238,7 @@ struct JobDetailView: View {
             job = try await j; scans = try await s; photos = try await p
             if autoStartScan && !didAutoStart {
                 didAutoStart = true
+                pendingRoomName = autoRoomName          // room was picked on the Home sheet
                 try? await Task.sleep(for: .milliseconds(300))
                 startScan()
             }

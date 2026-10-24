@@ -7,6 +7,7 @@ struct HomeView: View {
     @State private var recent: [Job] = []
     @State private var starting = false
     @State private var showPaywall = false
+    @State private var showNewMeasurement = false
     @State private var startError: String?
     @State private var path = NavigationPath()
 
@@ -24,12 +25,15 @@ struct HomeView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: JobRoute.self) { route in
-                JobDetailView(jobId: route.id, autoStartScan: route.autoScan)
+                JobDetailView(jobId: route.id, autoStartScan: route.autoScan, autoRoomName: route.roomName)
             }
             .alert("Couldn't start", isPresented: Binding(get: { startError != nil }, set: { if !$0 { startError = nil } })) {
                 Button("OK") {}
             } message: { Text(startError ?? "") }
             .sheet(isPresented: $showPaywall) { PaywallView() }
+            .sheet(isPresented: $showNewMeasurement) {
+                NewMeasurementSheet { address, room in Task { await startMeasurement(address: address, roomName: room) } }
+            }
             .task { await load() }
             .refreshable { await load() }
         }
@@ -66,7 +70,9 @@ struct HomeView: View {
     }
 
     private var bigButton: some View {
-        Button { Task { await startMeasurement() } } label: {
+        Button {
+            if session.entitlement.canScan { showNewMeasurement = true } else { showPaywall = true }
+        } label: {
             ZStack(alignment: .bottom) {
                 LinearGradient(colors: [Color(red: 0.055, green: 0.102, blue: 0.184),
                                         Color(red: 0.039, green: 0.075, blue: 0.141),
@@ -78,7 +84,7 @@ struct HomeView: View {
                     HStack(spacing: 8) {
                         Text("New Measurement").font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
                     }
-                    Text("Tap to scan. Address and name are filled in for you.")
+                    Text("Confirm the address, pick the room, scan.")
                         .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.55))
                 }
                 .padding(.bottom, 22)
@@ -125,44 +131,30 @@ struct HomeView: View {
         LocationService.shared.prewarm()   // ask for permission + cache a fix so the first scan gets its address instantly
     }
 
-    /// One tap → scanner opens immediately. The address is fetched in the background and
-    /// becomes the job's name + address as soon as it arrives.
-    private func startMeasurement() async {
+    /// Tap → confirm address + pick the room → job is created (named after the address) → scanner opens.
+    private func startMeasurement(address a: AddressFields?, roomName: String) async {
         guard !starting, let userId = session.userId, let orgId = session.profile?.orgId else { return }
-        guard session.entitlement.canScan else { showPaywall = true; return }
         starting = true; defer { starting = false }
 
         var job = Job(orgId: orgId, createdBy: userId, title: String(localized: "New measurement"))
+        if let a {
+            job.addressLine1 = a.line1.nilIfEmpty; job.addressLine2 = a.line2.nilIfEmpty
+            job.city = a.city.nilIfEmpty; job.state = a.state.nilIfEmpty; job.postalCode = a.postalCode.nilIfEmpty
+            job.country = a.country.nilIfEmpty ?? "US"; job.latitude = a.latitude; job.longitude = a.longitude
+            if let t = [a.line1, a.city].compactMap({ $0.nilIfEmpty }).first { job.title = t }
+        }
         do {
             let saved = try await Repository.upsert(job)
             recent.insert(saved, at: 0)
-            path.append(JobRoute(id: saved.id, autoScan: true))
-            job = saved
-        } catch { startError = error.localizedDescription; return }
-
-        // background: fill in address + name (retry once — the permission sheet may be up during the first try)
-        let jobId = job.id
-        Task.detached(priority: .utility) {
-            var found: AddressFields? = try? await LocationService.shared.currentAddress()
-            if found == nil { try? await Task.sleep(for: .seconds(4)); found = try? await LocationService.shared.currentAddress() }
-            guard let a = found else { return }
-            guard var latest = try? await Repository.job(id: jobId) else { return }
-            latest.addressLine1 = a.line1.nilIfEmpty; latest.addressLine2 = a.line2.nilIfEmpty
-            latest.city = a.city.nilIfEmpty; latest.state = a.state.nilIfEmpty; latest.postalCode = a.postalCode.nilIfEmpty
-            latest.country = a.country.nilIfEmpty ?? "US"; latest.latitude = a.latitude; latest.longitude = a.longitude
-            if latest.title == String(localized: "New measurement"), let t = [a.line1, a.city].compactMap({ $0.nilIfEmpty }).first {
-                latest.title = t
-            }
-            if let updated = try? await Repository.upsert(latest) {
-                await MainActor.run { if let k = recent.firstIndex(where: { $0.id == updated.id }) { recent[k] = updated } }
-            }
-        }
+            path.append(JobRoute(id: saved.id, autoScan: true, roomName: roomName))
+        } catch { startError = error.localizedDescription }
     }
 }
 
 struct JobRoute: Hashable {
     let id: UUID
     let autoScan: Bool
+    var roomName: String? = nil
 }
 
 /// Hero: an isometric room draws itself as a hairline, a light sweep reveals its surfaces,

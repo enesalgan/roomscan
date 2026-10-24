@@ -10,6 +10,7 @@ struct ScanSessionView: View {
 
     let job: Job
     var existingScans: Int = 0
+    var roomName: String? = nil
     let onSaved: (Scan) -> Void
     var onPhoto: ((Photo) -> Void)? = nil
 
@@ -161,7 +162,7 @@ struct ScanSessionView: View {
             let plan = FloorPlanBuilder.build(from: room)
             let files = try RoomSummaryBuilder.export(room, name: "room")
             let scan = Scan(jobId: job.id, orgId: job.orgId, createdBy: userId,
-                            name: "Room \(existingScans + 1)",
+                            name: roomName?.nilIfEmpty ?? "Room \(existingScans + 1)",
                             floorAreaM2: plan?.area ?? built.floorAreaM2,
                             summary: plan?.summary ?? built.summary,
                             plan: plan)
