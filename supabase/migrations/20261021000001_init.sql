@@ -102,6 +102,7 @@ create table scans (
   room_count      int  not null default 1,
   floor_area_m2   numeric(10,3),
   summary         jsonb not null default '{}'::jsonb, -- walls/doors/windows/objects counts, bbox etc.
+  plan            jsonb,                            -- editable FloorPlan (corners, openings, objects, measurements)
   captured_at     timestamptz not null default now(),
   local_id        text,
   created_at      timestamptz not null default now()
