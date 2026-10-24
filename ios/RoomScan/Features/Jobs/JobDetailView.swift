@@ -55,7 +55,10 @@ struct JobDetailView: View {
                     ScanSessionView(job: job, existingScans: scans.count, onSaved: { saved in
                         scans.insert(saved, at: 0)
                         if job.status == .new || job.status == .scheduled { self.job?.status = .measured }
-                        Task { await session.refreshEntitlement() }
+                        Task {
+                            await session.refreshEntitlement()
+                            if let fresh = try? await Repository.job(id: jobId) { self.job = fresh }   // name/address filled in meanwhile
+                        }
                         // open the 2D plan right away
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { scanToPreview = saved }
                     }, onPhoto: { p in photos.append(p) })

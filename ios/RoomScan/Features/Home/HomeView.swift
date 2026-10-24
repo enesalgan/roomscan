@@ -76,8 +76,7 @@ struct HomeView: View {
                     .padding(.bottom, 64)
                 VStack(spacing: 4) {
                     HStack(spacing: 8) {
-                        if starting { ProgressView().tint(.white) }
-                        Text(starting ? "Starting…" : "New Measurement").font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
+                        Text("New Measurement").font(.system(size: 19, weight: .semibold)).foregroundStyle(.white)
                     }
                     Text("Tap to scan. Address and name are filled in for you.")
                         .font(.system(size: 12.5)).foregroundStyle(.white.opacity(0.55))
@@ -125,33 +124,36 @@ struct HomeView: View {
         await session.refreshEntitlement()
     }
 
-    /// One tap: locate (max 2.5 s) → create the job named after the address → open it with the scanner running.
+    /// One tap → scanner opens immediately. The address is fetched in the background and
+    /// becomes the job's name + address as soon as it arrives.
     private func startMeasurement() async {
         guard !starting, let userId = session.userId, let orgId = session.profile?.orgId else { return }
         guard session.entitlement.canScan else { showPaywall = true; return }
         starting = true; defer { starting = false }
 
-        let address: AddressFields? = await withTaskGroup(of: AddressFields?.self) { group in
-            group.addTask { try? await LocationService.shared.currentAddress() }
-            group.addTask { try? await Task.sleep(for: .seconds(2.5)); return nil }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
-
-        var job = Job(orgId: orgId, createdBy: userId, title: "")
-        if let a = address {
-            job.addressLine1 = a.line1.nilIfEmpty; job.addressLine2 = a.line2.nilIfEmpty
-            job.city = a.city.nilIfEmpty; job.state = a.state.nilIfEmpty; job.postalCode = a.postalCode.nilIfEmpty
-            job.country = a.country.nilIfEmpty ?? "US"; job.latitude = a.latitude; job.longitude = a.longitude
-        }
-        let addrTitle = [address?.line1, address?.city].compactMap { $0?.nilIfEmpty }.first
-        job.title = addrTitle ?? String(localized: "Measurement \(Date().formatted(.dateTime.month(.abbreviated).day().hour().minute()))")
+        var job = Job(orgId: orgId, createdBy: userId, title: String(localized: "New measurement"))
         do {
             let saved = try await Repository.upsert(job)
             recent.insert(saved, at: 0)
             path.append(JobRoute(id: saved.id, autoScan: true))
-        } catch { startError = error.localizedDescription }
+            job = saved
+        } catch { startError = error.localizedDescription; return }
+
+        // background: fill in address + name
+        let jobId = job.id
+        Task.detached(priority: .utility) {
+            guard let a = try? await LocationService.shared.currentAddress() else { return }
+            guard var latest = try? await Repository.job(id: jobId) else { return }
+            latest.addressLine1 = a.line1.nilIfEmpty; latest.addressLine2 = a.line2.nilIfEmpty
+            latest.city = a.city.nilIfEmpty; latest.state = a.state.nilIfEmpty; latest.postalCode = a.postalCode.nilIfEmpty
+            latest.country = a.country.nilIfEmpty ?? "US"; latest.latitude = a.latitude; latest.longitude = a.longitude
+            if latest.title == String(localized: "New measurement"), let t = [a.line1, a.city].compactMap({ $0.nilIfEmpty }).first {
+                latest.title = t
+            }
+            if let updated = try? await Repository.upsert(latest) {
+                await MainActor.run { if let k = recent.firstIndex(where: { $0.id == updated.id }) { recent[k] = updated } }
+            }
+        }
     }
 }
 

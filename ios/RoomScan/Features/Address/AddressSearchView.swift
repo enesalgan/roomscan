@@ -94,26 +94,45 @@ final class LocationService: NSObject, CLLocationManagerDelegate {
         return a
     }
 
-    private func currentLocation() async throws -> CLLocation {
+    private func currentLocation(timeout: TimeInterval = 6) async throws -> CLLocation {
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyNearestTenMeters
-        if manager.authorizationStatus == .notDetermined { manager.requestWhenInUseAuthorization() }
+        switch manager.authorizationStatus {
+        case .denied, .restricted: throw AppError.message("Location access is off. Enable it in Settings to auto-fill addresses.")
+        case .notDetermined: manager.requestWhenInUseAuthorization()
+        default: break
+        }
+        if continuation != nil { throw AppError.message("Location request already in progress") }
         return try await withCheckedThrowingContinuation { cont in
             continuation = cont
-            manager.requestLocation()
+            if manager.authorizationStatus != .notDetermined { manager.requestLocation() }
+            // never hang: give up after `timeout`
+            DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
+                self?.finish(.failure(AppError.message("Location timed out")))
+            }
         }
     }
 
+    private func finish(_ result: Result<CLLocation, Error>) {
+        guard let c = continuation else { return }
+        continuation = nil
+        c.resume(with: result)
+    }
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        if let l = locations.last { continuation?.resume(returning: l); continuation = nil }
+        if let l = locations.last { finish(.success(l)) }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        continuation?.resume(throwing: error); continuation = nil
+        finish(.failure(error))
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways,
-           continuation != nil { manager.requestLocation() }
+        guard continuation != nil else { return }
+        switch manager.authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways: manager.requestLocation()
+        case .denied, .restricted: finish(.failure(AppError.message("Location access is off.")))
+        default: break
+        }
     }
 }

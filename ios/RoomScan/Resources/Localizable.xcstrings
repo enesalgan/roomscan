@@ -7414,6 +7414,74 @@
         }
       }
     },
+    "New measurement": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nueva medición"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yeni ölçüm"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "नया माप"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nova medição"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Новое измерение"
+          }
+        }
+      }
+    },
+    "Location access is off. Enable it in Settings to auto-fill addresses.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La ubicación está desactivada. Actívala en Ajustes para completar direcciones."
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Konum erişimi kapalı. Adreslerin otomatik dolması için Ayarlar'dan aç."
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "स्थान एक्सेस बंद है। पते स्वतः भरने के लिए सेटिंग्स में चालू करें।"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Localização desativada. Ative em Configurações para preencher endereços."
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Доступ к геолокации выключен. Включите в Настройках."
+          }
+        }
+      }
+    },
     "Stairs": {
       "localizations": {
         "es": {

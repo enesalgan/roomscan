@@ -222,6 +222,8 @@ T = {
 "Measurement %@": ("Medición %@","Ölçüm %@","माप %@","Medição %@","Измерение %@"),
 "not scanned": ("sin escanear","taranmadı","स्कैन नहीं हुआ","não escaneada","не отсканирована"),
 "Wall %lld of %lld · not scanned": ("Pared %lld de %lld · sin escanear","Duvar %lld / %lld · taranmadı","दीवार %lld / %lld · स्कैन नहीं हुई","Parede %lld de %lld · não escaneada","Стена %lld из %lld · не отсканирована"),
+"New measurement": ("Nueva medición","Yeni ölçüm","नया माप","Nova medição","Новое измерение"),
+"Location access is off. Enable it in Settings to auto-fill addresses.": ("La ubicación está desactivada. Actívala en Ajustes para completar direcciones.","Konum erişimi kapalı. Adreslerin otomatik dolması için Ayarlar'dan aç.","स्थान एक्सेस बंद है। पते स्वतः भरने के लिए सेटिंग्स में चालू करें।","Localização desativada. Ative em Configurações para preencher endereços.","Доступ к геолокации выключен. Включите в Настройках."),
 "Stairs": ("Escaleras","Merdiven","सीढ़ियाँ","Escadas","Лестница"),
 }
 
