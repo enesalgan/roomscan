@@ -28,6 +28,17 @@ struct SettingsView: View {
                         .listRowBackground(Color.clear)
                 }
 
+                Section {
+                    Picker(selection: Binding(get: { session.profile?.profession ?? .other }, set: { p in Task { await session.setProfession(p) } })) {
+                        ForEach(Profession.allCases) { p in Label(p.title, systemImage: p.icon).tag(p) }
+                    } label: { Label("I am a…", systemImage: "person.text.rectangle") }
+                    NavigationLink { BrandingView() } label: {
+                        Label("Company & branding", systemImage: "building.2.crop.circle")
+                    }
+                } footer: {
+                    Text("Company details, logo and watermark appear on PDF reports.")
+                }
+
                 Section("Language") {
                     Picker("Language", selection: Binding(get: { language.code }, set: { language.code = $0 })) {
                         ForEach(AppLanguage.options) { o in Text("\(o.flag)  \(o.name)").tag(o.code) }

@@ -56,6 +56,7 @@ final class SessionStore {
             guard let p else { throw AppError.message("Profile not found. Please sign in again.") }
             profile = p
             organization = try await supabase.from("organizations").select().eq("id", value: p.orgId).single().execute().value
+            if let org = organization { await BrandingStore.shared.load(for: org, demo: false) }
             await refreshEntitlement()
         } catch {
             lastError = error.localizedDescription
@@ -80,14 +81,20 @@ final class SessionStore {
     /// kind: .individual | .company(name) | .invite(code)
     enum SignupKind { case individual, company(String), invite(String) }
 
-    func signUp(email: String, password: String, fullName: String, kind: SignupKind) async throws {
-        var meta: [String: AnyJSON] = ["full_name": .string(fullName)]
+    func signUp(email: String, password: String, fullName: String, kind: SignupKind, profession: Profession) async throws {
+        var meta: [String: AnyJSON] = ["full_name": .string(fullName), "profession": .string(profession.rawValue)]
         switch kind {
         case .individual: break
         case .company(let name): meta["org_name"] = .string(name)
         case .invite(let code): meta["invite_code"] = .string(code.uppercased())
         }
         try await supabase.auth.signUp(email: email, password: password, data: meta)
+    }
+
+    func setProfession(_ p: Profession) async {
+        guard let userId else { return }
+        do { try await Repository.updateProfession(p, userId: userId); profile?.profession = p }
+        catch { lastError = error.localizedDescription }
     }
 
     func signOut() async {
@@ -105,6 +112,7 @@ final class SessionStore {
         organization = DemoStore.shared.organization
         entitlement = DemoStore.shared.entitlement
         state = .signedIn
+        Task { await BrandingStore.shared.load(for: DemoStore.shared.organization, demo: true) }
     }
 
     func exitDemo() {

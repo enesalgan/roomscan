@@ -31,6 +31,7 @@ struct ScanPreviewView: View {
     @State private var measureMode = false
     @State private var showStylePicker = false
     @State private var dimEdit: DimEdit?
+    @State private var share: ShareItems?
 
     private struct DimEdit: Identifiable {
         let id = UUID()
@@ -54,6 +55,7 @@ struct ScanPreviewView: View {
                 }
                 bottomPanel
             }
+            .sheet(item: $share) { ShareSheet(items: $0.urls) }
             .sheet(item: $dimEdit) { d in
                 MeasurementSheet(title: d.title, meters: d.meters) { m in apply(d.target, m) }
             }
@@ -72,6 +74,11 @@ struct ScanPreviewView: View {
                     }
                     Menu {
                         Button { edit { $0 = $0.straightened() }; selection = nil; refitToken += 1 } label: { Label("Square up walls", systemImage: "square.on.square.dashed") }
+                        Divider()
+                        if let plan {
+                            Button { share = ShareItems(urls: CADExport.files(for: scan, plan: plan, formats: ["dxf"])) } label: { Label("Export DXF (2020 / AutoCAD)", systemImage: "square.and.arrow.up") }
+                            Button { share = ShareItems(urls: CADExport.files(for: scan, plan: plan, formats: ["svg"])) } label: { Label("Export SVG", systemImage: "square.and.arrow.up") }
+                        }
                         if let modelURL {
                             Button { previewItem = modelURL } label: { Label("View scan in AR", systemImage: "arkit") }
                             ShareLink(item: modelURL) { Label("Share USDZ", systemImage: "square.and.arrow.up") }

@@ -20,10 +20,11 @@ final class DemoStore {
     var timeEntries: [TimeEntry] = []
     var subscribed = false
     var credits = 0
+    var profession: Profession? = .contractor
 
     var profile: Profile {
         Profile(id: userId, orgId: orgId, role: .owner, fullName: "Demo User", email: "demo@roomscan.app",
-                phone: nil, isActive: true, createdAt: Date())
+                phone: nil, profession: profession, isActive: true, createdAt: Date())
     }
     var organization: Organization {
         Organization(id: orgId, name: "Demo Showroom", type: .company, ownerId: userId, freeScans: Config.freeScans, createdAt: Date())
@@ -52,10 +53,11 @@ final class DemoStore {
     private struct Snapshot: Codable {
         var jobs: [Job]; var scans: [Scan]; var photos: [Photo]; var timeEntries: [TimeEntry]
         var subscribed: Bool; var credits: Int
+        var profession: Profession?
     }
 
     func save() {
-        let snap = Snapshot(jobs: jobs, scans: scans, photos: photos, timeEntries: timeEntries, subscribed: subscribed, credits: credits)
+        let snap = Snapshot(jobs: jobs, scans: scans, photos: photos, timeEntries: timeEntries, subscribed: subscribed, credits: credits, profession: profession)
         if let data = try? JSONEncoder.postgrest.encode(snap) {
             try? data.write(to: fileURL("state.json"))
         }
@@ -66,6 +68,7 @@ final class DemoStore {
               let snap = try? JSONDecoder.postgrest.decode(Snapshot.self, from: data) else { return }
         jobs = snap.jobs; scans = snap.scans; photos = snap.photos; timeEntries = snap.timeEntries
         subscribed = snap.subscribed; credits = snap.credits
+        if let p = snap.profession { profession = p }
     }
 
     func reset() {

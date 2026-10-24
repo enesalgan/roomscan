@@ -4,6 +4,49 @@ import SwiftUI
 // MARK: - Enums (mirror Postgres enums)
 
 enum OrgType: String, Codable { case company, individual }
+
+/// Who the user is — chosen at sign-up, editable in Settings
+enum Profession: String, Codable, CaseIterable, Identifiable {
+    case contractor, designer, dealer, homeowner, other
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .contractor: String(localized: "Contractor")
+        case .designer: String(localized: "Designer")
+        case .dealer: String(localized: "Dealer / Showroom")
+        case .homeowner: String(localized: "Homeowner")
+        case .other: String(localized: "Other")
+        }
+    }
+    var icon: String {
+        switch self {
+        case .contractor: "hammer"
+        case .designer: "pencil.and.ruler"
+        case .dealer: "storefront"
+        case .homeowner: "house"
+        case .other: "person"
+        }
+    }
+}
+
+/// Company details printed on PDF reports (stored on the organization as JSON)
+struct Branding: Codable, Hashable {
+    var companyName = ""
+    var phone = ""
+    var email = ""
+    var website = ""
+    var license = ""
+    var address = ""
+    var tagline = ""
+    var watermark = true
+    var logoPath: String? = nil
+
+    enum CodingKeys: String, CodingKey {
+        case phone, email, website, license, address, tagline, watermark
+        case companyName = "company_name"
+        case logoPath = "logo_path"
+    }
+}
 enum MemberRole: String, Codable { case owner, admin, member }
 
 enum JobStatus: String, Codable, CaseIterable, Identifiable {
@@ -61,10 +104,11 @@ struct Organization: Codable, Identifiable, Hashable {
     var type: OrgType
     var ownerId: UUID
     var freeScans: Int
+    var branding: Branding? = nil
     let createdAt: Date
 
     enum CodingKeys: String, CodingKey {
-        case id, name, type
+        case id, name, type, branding
         case ownerId = "owner_id"
         case freeScans = "free_scans"
         case createdAt = "created_at"
@@ -78,6 +122,7 @@ struct Profile: Codable, Identifiable, Hashable {
     var fullName: String?
     var email: String?
     var phone: String?
+    var profession: Profession? = nil
     var isActive: Bool
     let createdAt: Date
 
@@ -85,7 +130,7 @@ struct Profile: Codable, Identifiable, Hashable {
     var isAdmin: Bool { role == .owner || role == .admin }
 
     enum CodingKeys: String, CodingKey {
-        case id, role, phone, email
+        case id, role, phone, email, profession
         case orgId = "org_id"
         case fullName = "full_name"
         case isActive = "is_active"

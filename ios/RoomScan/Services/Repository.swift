@@ -195,6 +195,11 @@ enum Repository {
 
     // MARK: Members & invites
 
+    static func updateProfession(_ p: Profession, userId: UUID) async throws {
+        if await DemoStore.isActive { await MainActor.run { DemoStore.shared.profession = p; DemoStore.shared.save() }; return }
+        try await supabase.from("profiles").update(["profession": p.rawValue]).eq("id", value: userId).execute()
+    }
+
     static func members() async throws -> [Profile] {
         if await DemoStore.isActive { return await [DemoStore.shared.profile] }
         return try await supabase.from("profiles").select().order("created_at").execute().value

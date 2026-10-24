@@ -12,6 +12,7 @@ struct AuthView: View {
 
     @State private var mode: Mode = .signIn
     @State private var kind: AccountKind = .company
+    @State private var profession: Profession = .contractor
     @State private var email = ""
     @State private var password = ""
     @State private var fullName = ""
@@ -29,7 +30,7 @@ struct AuthView: View {
                 header
                 modePicker
                 fields
-                if mode == .signUp { accountType }
+                if mode == .signUp { professionPicker; accountType }
                 messages
                 primaryButton
                 if mode == .signIn {
@@ -94,6 +95,32 @@ struct AuthView: View {
             field("envelope", placeholder: "Email", text: $email, focus: .email, content: .emailAddress, keyboard: .emailAddress, submit: .next) { focus = .password }
             field("lock", placeholder: "Password", text: $password, focus: .password, secure: true,
                   content: mode == .signUp ? .newPassword : .password, submit: .go) { Task { await submit() } }
+        }
+    }
+
+    private var professionPicker: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("I am a…").font(.footnote.weight(.semibold)).foregroundStyle(.secondary).padding(.leading, 4)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Profession.allCases) { p in
+                        Button {
+                            withAnimation(.snappy) {
+                                profession = p
+                                if p == .homeowner { kind = .individual } else if kind == .individual { kind = .company }
+                            }
+                        } label: {
+                            Label(p.title, systemImage: p.icon).font(.subheadline.weight(.semibold))
+                                .padding(.horizontal, 14).frame(height: 38)
+                                .background(profession == p ? Color.accentColor.opacity(0.12) : Color(.secondarySystemGroupedBackground), in: Capsule())
+                                .overlay(Capsule().stroke(profession == p ? Color.accentColor : .clear, lineWidth: 1.5))
+                                .foregroundStyle(profession == p ? Color.accentColor : .primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 4)
+            }
         }
     }
 
@@ -218,7 +245,7 @@ struct AuthView: View {
                 case .company: .company(orgName.trimmingCharacters(in: .whitespaces))
                 case .invite: .invite(inviteCode.trimmingCharacters(in: .whitespaces))
                 }
-                try await session.signUp(email: email, password: password, fullName: fullName, kind: k)
+                try await session.signUp(email: email, password: password, fullName: fullName, kind: k, profession: profession)
                 if session.state != .signedIn {
                     info = String(localized: "Check your email to confirm your account, then sign in.")
                     mode = .signIn

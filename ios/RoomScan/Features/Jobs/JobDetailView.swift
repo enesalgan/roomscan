@@ -23,6 +23,8 @@ struct JobDetailView: View {
     @State private var showRoomPicker = false
     @State private var pendingRoomName: String?
     @State private var renaming = false
+    @State private var share: ShareItems?
+    @State private var building = false
     @State private var newTitle = ""
 
     var body: some View {
@@ -52,10 +54,17 @@ struct JobDetailView: View {
                                 }
                             }
                             Divider()
+                            Button { Task { await sharePDF() } } label: { Label("Share PDF report", systemImage: "doc.richtext") }
+                            if scans.contains(where: { $0.plan != nil }) {
+                                Button { shareCAD() } label: { Label("Export DXF + SVG", systemImage: "square.and.arrow.up") }
+                            }
+                            Divider()
                             Button(role: .destructive) { confirmDelete = true } label: { Label("Delete job", systemImage: "trash") }
-                        } label: { Image(systemName: "ellipsis.circle") }
+                        } label: { if building { ProgressView() } else { Image(systemName: "ellipsis.circle") } }
+                        .disabled(building)
                     }
                 }
+                .sheet(item: $share) { ShareSheet(items: $0.urls) }
                 .sheet(isPresented: $showEdit) {
                     JobEditView(job: job) { self.job = $0 }
                 }
@@ -238,6 +247,32 @@ struct JobDetailView: View {
         guard RoomCaptureSession.isSupported else { error = AppError.lidarUnsupported.localizedDescription; return }
         guard session.entitlement.canScan else { showPaywall = true; return }
         if pendingRoomName == nil { showRoomPicker = true } else { showScanner = true }
+    }
+
+    // MARK: Share
+
+    private func sharePDF() async {
+        guard let job else { return }
+        building = true; defer { building = false }
+        // photos (manual first, then scan frames), max 12, downscaled
+        var images: [(UIImage, String?)] = []
+        let ordered = photos.sorted { ($0.caption == "Scan frame" ? 1 : 0) < ($1.caption == "Scan frame" ? 1 : 0) }
+        for p in ordered.prefix(12) {
+            if let url = try? await Repository.signedURL(bucket: "photos", path: p.storagePath),
+               let data = try? await URLSession.shared.data(from: url).0, let img = UIImage(data: data) {
+                images.append((img.resized(maxSide: 1200), p.caption == "Scan frame" ? nil : p.caption))
+            }
+        }
+        let b = BrandingStore.shared
+        let input = JobReportPDF.Input(job: job, scans: scans, photos: images, branding: b.branding, logo: b.logo, preparedBy: session.profile?.displayName)
+        do { let url = try JobReportPDF.generate(input); share = ShareItems(urls: [url]) }
+        catch { self.error = error.localizedDescription }
+    }
+
+    private func shareCAD() {
+        var urls: [URL] = []
+        for s in scans { if let p = s.plan { urls += CADExport.files(for: s, plan: p) } }
+        share = ShareItems(urls: urls)
     }
 
     private func rename(_ title: String) async {
