@@ -277,6 +277,7 @@ T = {
 "Garage": ("Garaje","Garaj","गैराज","Garagem","Гараж"),
 "Basement": ("Sótano","Bodrum","बेसमेंट","Porão","Подвал"),
 "Other": ("Otro","Diğer","अन्य","Outro","Другое"),
+"Add address": ("Añadir dirección","Adres ekle","पता जोड़ें","Adicionar endereço","Добавить адрес"),
 "Replace with…": ("Reemplazar con…","Şununla değiştir…","इससे बदलें…","Substituir por…","Заменить на…"),
 "Add corner": ("Añadir esquina","Köşe ekle","कोना जोड़ें","Adicionar canto","Добавить угол"),
 "Windows": ("Ventanas","Pencereler","खिड़कियाँ","Janelas","Окна"),

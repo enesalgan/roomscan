@@ -233,6 +233,28 @@ struct FloorMapCanvas: View {
                         ctx.stroke(gap, with: .color(.cyan.opacity(0.8)), lineWidth: max(wallPx * 0.35, 1))
                     }
                 }
+                // wall lengths outside each wall (skipped when the room is drawn too small)
+                if scale > 18 {
+                    for i in 0..<plan.wallCount {
+                        let a = sp(plan.wallStart(i)), b = sp(plan.wallEnd(i))
+                        let len = hypot(b.x - a.x, b.y - a.y)
+                        guard len > 34 else { continue }
+                        let n = plan.outwardNormal(i)
+                        let nr = PlanPoint(x: n.x * cos(pl.rotation) - n.y * sin(pl.rotation), y: n.x * sin(pl.rotation) + n.y * cos(pl.rotation))
+                        let mid = CGPoint(x: (a.x + b.x) / 2 + nr.x * (wallPx / 2 + 11), y: (a.y + b.y) / 2 + nr.y * (wallPx / 2 + 11))
+                        var ang = atan2(b.y - a.y, b.x - a.x)
+                        if ang > .pi / 2 { ang -= .pi } else if ang < -.pi / 2 { ang += .pi }
+                        let label = ctx.resolve(Text(Measure.ftIn(plan.wallLength(i))).font(.system(size: 9.5, weight: .medium)).foregroundStyle(sel ? Color.accentColor : .secondary))
+                        let sz = label.measure(in: CGSize(width: 120, height: 20))
+                        ctx.drawLayer { l in
+                            l.translateBy(x: mid.x, y: mid.y)
+                            l.rotate(by: .radians(ang))
+                            l.fill(Path(roundedRect: CGRect(x: -sz.width / 2 - 3, y: -sz.height / 2, width: sz.width + 6, height: sz.height), cornerRadius: 3),
+                                   with: .color(Color(.systemGroupedBackground).opacity(0.9)))
+                            l.draw(label, at: .zero, anchor: .center)
+                        }
+                    }
+                }
                 // label
                 let c = sp(PlanPoint(x: plan.width / 2, y: plan.depth / 2))
                 let title = ctx.resolve(Text(r.name).font(.system(size: max(10, min(16, scale * 0.3)), weight: .semibold)).foregroundStyle(ink))

@@ -134,13 +134,29 @@ struct JobDetailView: View {
                 }
                 .frame(height: 150).listRowInsets(EdgeInsets())
             }
-            if !job.addressSummary.isEmpty {
-                Button {
-                    openInMaps(job)
-                } label: {
-                    Label { Text(job.addressSummary).foregroundStyle(.primary) } icon: { Image(systemName: "map") }
+            Button { showEdit = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "mappin.and.ellipse").foregroundStyle(Color.accentColor).frame(width: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        if job.addressSummary.isEmpty {
+                            Text("Add address").foregroundStyle(Color.accentColor)
+                        } else {
+                            Text([job.addressLine1, job.addressLine2].compactMap { $0?.nilIfEmpty }.joined(separator: ", ")).foregroundStyle(.primary)
+                            Text([job.city, job.state, job.postalCode].compactMap { $0?.nilIfEmpty }.joined(separator: ", ")).font(.footnote).foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer()
+                    if !job.addressSummary.isEmpty {
+                        Button { openInMaps(job) } label: {
+                            Image(systemName: "arrow.triangle.turn.up.right.diamond.fill").font(.body)
+                                .frame(width: 34, height: 34).background(Color.accentColor.opacity(0.12), in: Circle())
+                        }
+                        .buttonStyle(.borderless)
+                    }
+                    Image(systemName: "chevron.right").font(.caption).foregroundStyle(.tertiary)
                 }
             }
+            .buttonStyle(.plain)
         }
     }
 

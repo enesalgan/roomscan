@@ -9284,6 +9284,40 @@
         }
       }
     },
+    "Add address": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Añadir dirección"
+          }
+        },
+        "tr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adres ekle"
+          }
+        },
+        "hi": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "पता जोड़ें"
+          }
+        },
+        "pt-BR": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Adicionar endereço"
+          }
+        },
+        "ru": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Добавить адрес"
+          }
+        }
+      }
+    },
     "Replace with…": {
       "localizations": {
         "es": {
